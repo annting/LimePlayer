@@ -48,6 +48,12 @@ interface PlaybackEngine {
      */
     fun selectTrack(kind: TrackKind, trackId: String?)
 
+    /**
+     * 绑定 / 解绑视频输出面（UI 提供 SurfaceView 的 Surface；libmpv 同样以绑定面渲染）。
+     * 传 `null` 表示解绑（Surface 销毁时）。可在 [prepare] 之前调用（Surface 先于媒体就绪）。
+     */
+    fun setVideoSurface(surface: android.view.Surface?)
+
     /** 释放全部资源。幂等（重复调用安全）。释放后不应再调用其它方法。 */
     fun release()
 }

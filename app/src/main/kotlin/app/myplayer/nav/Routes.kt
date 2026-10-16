@@ -5,4 +5,5 @@ object Routes {
     const val ADD_SERVER = "addServer"   // 任务 1-13
     const val LOGIN = "login"            // 任务 1-13
     const val LIBRARY = "library"
+    const val PLAYER = "play"            // play/{itemId}（任务 2-2）
 }

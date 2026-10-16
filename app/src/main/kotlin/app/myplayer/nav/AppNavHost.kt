@@ -10,12 +10,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import app.myplayer.core.datastore.ServerConfigStore
 import app.myplayer.core.datastore.TokenStore
 import app.myplayer.core.designsystem.components.EmptyState
+import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSize
 import app.myplayer.core.model.ImageSource
@@ -24,6 +27,7 @@ import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.SourceType
 import app.myplayer.feature.library.LibraryScreen
 import app.myplayer.feature.library.LibraryViewModel
+import app.myplayer.feature.player.PlayerRoute
 import app.myplayer.feature.server.AddServerScreen
 import app.myplayer.feature.server.AddServerViewModel
 import app.myplayer.feature.server.LoginScreen
@@ -56,6 +60,7 @@ fun AppNavHost(
     serverConfigStore: ServerConfigStore,
     tokenStore: TokenStore,
     client: OkHttpClient,
+    clientCapabilities: ClientCapabilities,
     serverId: String?,
     source: MediaSource?,
 ) {
@@ -158,8 +163,28 @@ fun AppNavHost(
                         source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
                     },
                     onSelectLibrary = vm::selectLibrary,
+                    onPlay = { item -> nav.navigate("${Routes.PLAYER}/${item.id}") },
                     serverLabel = serverLabel,
                 )
+            }
+        }
+
+        composable(
+            route = "${Routes.PLAYER}/{itemId}",
+            arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
+        ) { entry ->
+            val itemId = entry.arguments?.getString("itemId").orEmpty()
+            val src = source
+            if (src != null && itemId.isNotEmpty()) {
+                PlayerRoute(
+                    itemId = itemId,
+                    source = src,
+                    caps = clientCapabilities,
+                    onBack = { nav.popBackStack() },
+                )
+            } else {
+                // 源未就绪（正常流程到不了）：不做空页，直接退回
+                LaunchedEffect(Unit) { nav.popBackStack() }
             }
         }
     }

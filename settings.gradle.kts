@@ -43,5 +43,6 @@ include(
     ":source:emby",
     ":feature:library",
     ":feature:lock",
+    ":feature:player",
     ":feature:server",
 )

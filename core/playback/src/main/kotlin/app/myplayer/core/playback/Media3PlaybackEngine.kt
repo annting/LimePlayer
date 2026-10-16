@@ -142,6 +142,10 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
         player.trackSelectionParameters = builder.build()
     }
 
+    override fun setVideoSurface(surface: android.view.Surface?) {
+        if (!released) player.setVideoSurface(surface)
+    }
+
     override fun release() {
         if (released) return
         released = true

@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":source:emby"))
     implementation(project(":feature:library"))
     implementation(project(":feature:lock"))
+    implementation(project(":feature:player"))
     implementation(project(":feature:server"))
 
     implementation(libs.androidx.core.ktx)

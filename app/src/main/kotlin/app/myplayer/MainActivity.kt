@@ -21,6 +21,7 @@ import app.myplayer.core.datastore.ServerConfigStore
 import app.myplayer.core.datastore.SettingsStore
 import app.myplayer.core.datastore.TokenStore
 import app.myplayer.core.designsystem.MyPlayerTheme
+import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MediaSource
 import app.myplayer.core.security.PatternCredentialStore
@@ -43,6 +44,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var tokenStore: TokenStore
     @Inject lateinit var sourceFactory: SourceFactory
     @Inject lateinit var client: OkHttpClient
+    @Inject lateinit var clientCapabilities: ClientCapabilities
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -107,6 +109,7 @@ class MainActivity : ComponentActivity() {
                 serverConfigStore = serverConfigStore,
                 tokenStore = tokenStore,
                 client = client,
+                clientCapabilities = clientCapabilities,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
             )

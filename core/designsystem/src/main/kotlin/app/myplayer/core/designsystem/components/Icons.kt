@@ -130,3 +130,122 @@ fun CheckIcon(tint: Color, modifier: Modifier = Modifier) {
         drawPath(path, color = tint, style = iconStroke(w))
     }
 }
+
+// ---- 播放器图标 ----
+
+/** 播放（实心三角）。 */
+@Composable
+fun PlayIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(22.dp)) {
+        val w = size.width; val h = size.height
+        val path = Path().apply {
+            moveTo(w * 0.30f, h * 0.18f)
+            lineTo(w * 0.84f, h * 0.5f)
+            lineTo(w * 0.30f, h * 0.82f)
+            close()
+        }
+        drawPath(path, color = tint)
+    }
+}
+
+/** 暂停（两条竖条）。 */
+@Composable
+fun PauseIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(22.dp)) {
+        val w = size.width; val h = size.height
+        val bar = w * 0.16f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.26f, h * 0.2f),
+            size = androidx.compose.ui.geometry.Size(bar, h * 0.6f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(bar * 0.35f),
+        )
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.58f, h * 0.2f),
+            size = androidx.compose.ui.geometry.Size(bar, h * 0.6f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(bar * 0.35f),
+        )
+    }
+}
+
+/** 快退（双左三角 + 竖挡板，播放器通用语义）。 */
+@Composable
+fun SeekBackIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(22.dp)) {
+        val w = size.width; val h = size.height
+        val bar = w * 0.10f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.16f, h * 0.24f),
+            size = androidx.compose.ui.geometry.Size(bar, h * 0.52f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(bar * 0.4f),
+        )
+        val tri = Path().apply {
+            moveTo(w * 0.88f, h * 0.22f)
+            lineTo(w * 0.88f, h * 0.78f)
+            lineTo(w * 0.34f, h * 0.5f)
+            close()
+        }
+        drawPath(tri, color = tint)
+    }
+}
+
+/** 快进（双右三角 + 竖挡板）。 */
+@Composable
+fun SeekForwardIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(22.dp)) {
+        val w = size.width; val h = size.height
+        val bar = w * 0.10f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.74f, h * 0.24f),
+            size = androidx.compose.ui.geometry.Size(bar, h * 0.52f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(bar * 0.4f),
+        )
+        val tri = Path().apply {
+            moveTo(w * 0.12f, h * 0.22f)
+            lineTo(w * 0.12f, h * 0.78f)
+            lineTo(w * 0.66f, h * 0.5f)
+            close()
+        }
+        drawPath(tri, color = tint)
+    }
+}
+
+/** 开锁（解锁态）。 */
+@Composable
+fun LockOpenIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(18.dp)) {
+        val w = size.width; val h = size.height
+        // 锁梁（右侧开口）
+        val shackle = Path().apply {
+            moveTo(w * 0.5f, h * 0.42f)
+            lineTo(w * 0.5f, h * 0.3f)
+            quadraticTo(w * 0.52f, h * 0.14f, w * 0.68f, h * 0.16f)
+            quadraticTo(w * 0.82f, h * 0.2f, w * 0.8f, h * 0.34f)
+        }
+        drawPath(shackle, color = tint, style = iconStroke(w))
+        // 锁体
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.2f, h * 0.42f),
+            size = androidx.compose.ui.geometry.Size(w * 0.6f, h * 0.44f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.08f),
+            style = iconStroke(w),
+        )
+    }
+}
+
+/** 设置（三条滑块）。 */
+@Composable
+fun SettingsIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(18.dp)) {
+        val w = size.width; val h = size.height
+        val stroke = iconStroke(w * 0.9f)
+        for ((y, knobX) in listOf(0.28f to 0.66f, 0.5f to 0.34f, 0.72f to 0.56f)) {
+            drawLine(tint, Offset(w * 0.16f, h * y), Offset(w * 0.84f, h * y), strokeWidth = stroke.width, cap = StrokeCap.Round)
+            drawCircle(tint, radius = w * 0.1f, center = Offset(w * knobX, h * y))
+        }
+    }
+}

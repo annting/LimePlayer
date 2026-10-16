@@ -1,12 +1,14 @@
 package app.myplayer.di
 
 import android.content.Context
+import android.os.Build
 import android.provider.Settings
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import app.myplayer.core.database.MediaDatabase
 import app.myplayer.core.database.RoomLibraryRepository
 import app.myplayer.core.datastore.*
+import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.network.HttpClientFactory
 import app.myplayer.core.network.NetworkConfig
@@ -86,4 +88,21 @@ object AppModule {
         tokenStore: TokenStore,
         deviceId: String,
     ): SourceFactory = SourceFactory(client, serverConfigStore, tokenStore, deviceId)
+
+    /**
+     * 本机播放能力声明（服务端 `DeviceProfile` 与三档协商的输入）。
+     *
+     * 编解码列表按「常见且 Media3 原生可解」取保守集合；后续可用 `MediaCodecList`
+     * 逐项探测细化（M3 起的按需优化，当前不影响直放/转码决策的正确性 —— 协商失败会安全降级到转码）。
+     */
+    @Provides @Singleton
+    fun clientCapabilities(deviceId: String): ClientCapabilities = ClientCapabilities(
+        supportedVideoCodecs = setOf("h264", "hevc", "vp9", "av1", "mpeg4"),
+        supportedAudioCodecs = setOf("aac", "mp3", "ac3", "eac3", "flac", "opus", "vorbis"),
+        maxWidth = 3840,
+        maxHeight = 2160,
+        supportsHdr = true,
+        deviceName = "${Build.MANUFACTURER} ${Build.MODEL}",
+        deviceId = deviceId,
+    )
 }
