@@ -28,7 +28,7 @@ dependencyResolutionManagement {
 rootProject.name = "LimePlayer"
 
 // M1 骨架的 12 个模块（docs/04-开发计划.md §3.2 任务 1-0）。
-// 其余模块（:core:playback、:source:jellyfin、:source:local、:feature:search/detail/player/settings）
+// 其余模块（:source:jellyfin、:source:local、:feature:search/detail/player/settings）
 // 在各自里程碑引入，不提前建空壳。
 include(
     ":app",
@@ -38,6 +38,7 @@ include(
     ":core:network",
     ":core:security",
     ":core:designsystem",
+    ":core:playback",
     ":source:httpapi",
     ":source:emby",
     ":feature:library",
