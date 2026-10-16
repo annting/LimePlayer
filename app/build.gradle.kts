@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -58,6 +60,16 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // DI：Hilt（KSP 代码生成；版本兼容性见 docs/02-技术规范.md §2.1）
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+
+    // :app 的装配点（AppModule）直接构造 Room 与 DataStore，需显式声明依赖
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.datastore.preferences)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -65,12 +77,6 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
 
     debugImplementation(libs.compose.ui.tooling)
-
-    // TODO(1-12): Hilt 在任务 1-12 接入本模块（与 :feature:* 一起）：
-    //   plugins 加 alias(libs.plugins.hilt) + alias(libs.plugins.ksp)
-    //   deps  加 implementation(libs.hilt.android) + ksp(libs.hilt.compiler)
-    //          + implementation(libs.androidx.hilt.navigation.compose)
-    //   并新增 @HiltAndroidApp 的 Application 类，在 Manifest 的 android:name 上指向它。
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)

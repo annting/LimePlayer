@@ -4,56 +4,75 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.myplayer.core.datastore.ServerConfigStore
+import app.myplayer.core.datastore.SettingsStore
+import app.myplayer.core.designsystem.MyPlayerTheme
+import app.myplayer.core.model.LibraryRepository
+import app.myplayer.core.security.PatternCredentialStore
+import app.myplayer.feature.lock.LockStatus
+import app.myplayer.feature.lock.LockViewModel
+import app.myplayer.feature.lock.PatternLockScreen
+import app.myplayer.nav.AppNavHost
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
-/**
- * 入口 Activity。任务 1-0（骨架）阶段只验证「能装能启动」。
- *
- * 接下来会依次替换本文件的内容：
- * · 1-9  :core:designsystem 提供真实主题（颜色 / 字体 token，见 docs/03-UI设计规范.md §2）
- * · 1-12 接入导航（AppNavHost）与应用锁门卫（shouldLock）
- * · 1-13 起  由 :feature:server / :feature:library 接管页面
- */
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var settingsStore: SettingsStore
+    @Inject lateinit var credentials: PatternCredentialStore
+    @Inject lateinit var libraryRepository: LibraryRepository
+    @Inject lateinit var serverConfigStore: ServerConfigStore
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { SkeletonScreen() }
-    }
-}
+        setContent {
+            MyPlayerTheme {
+                val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = null)
+                val servers by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+                val lockVm = remember { LockViewModel(credentials) }
+                val lockState by lockVm.state.collectAsStateWithLifecycle()
+                var unlocked by remember { mutableStateOf(false) }
+                var lastUnlockAt by remember { mutableStateOf<Long?>(null) }
 
-@Composable
-private fun SkeletonScreen() {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(text = "LimePlayer", style = MaterialTheme.typography.headlineMedium)
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    text = "骨架就绪（任务 1-0）\n下一步：1-1 Ticks 与领域模型",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                )
+                // 回前台判定：仅在应用锁开启且超过宽限期时重新上锁
+                val owner = LocalLifecycleOwner.current
+                DisposableEffect(owner, settings) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        val current = settings   // 委托属性不能智能转换，先落成局部值
+                        if (event == Lifecycle.Event.ON_START && current?.appLockEnabled == true) {
+                            unlocked = !shouldLock(true, lastUnlockAt, System.currentTimeMillis(), current.unlockGraceMillis)
+                        }
+                    }
+                    owner.lifecycle.addObserver(observer)
+                    onDispose { owner.lifecycle.removeObserver(observer) }
+                }
+
+                LaunchedEffect(lockState.status) {
+                    if (lockState.status == LockStatus.UNLOCKED) {
+                        unlocked = true
+                        lastUnlockAt = System.currentTimeMillis()
+                    }
+                }
+
+                // 设置尚未加载完（settings == null）时按「锁着」处理：宁可多解一次，也不要漏锁一帧
+                val needsLock = settings?.appLockEnabled != false && !unlocked
+                if (needsLock) {
+                    PatternLockScreen(lockState, lockVm::onPointTouched, lockVm::onDrawEnd)
+                } else {
+                    AppNavHost(
+                        repository = libraryRepository,
+                        serverId = servers.firstOrNull()?.id,
+                        source = null,                       // ← 任务 1-14 换成 SourceFactory 造出的真实 source
+                        onAddServer = { /* ← 任务 1-13/1-14 接上 Routes.ADD_SERVER */ },
+                    )
+                }
             }
         }
     }

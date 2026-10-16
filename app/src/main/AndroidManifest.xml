@@ -12,6 +12,7 @@
       · 「明文 HTTP」「信任自签证书」两个设置项在 P5 接入（届时改由设置项控制，而非构建类型）。
     -->
     <application
+        android:name=".MyPlayerApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
