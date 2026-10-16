@@ -39,4 +39,12 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Compose UI 测试跑在 Robolectric 上（JVM 单测，无需真机）：
+    // 手势链路（pointerInput）只有真正派发 PointerEvent 才能覆盖，纯逻辑测试抓不到。
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
