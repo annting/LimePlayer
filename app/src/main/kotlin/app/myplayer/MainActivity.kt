@@ -11,14 +11,18 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.myplayer.core.datastore.ServerConfigStore
 import app.myplayer.core.datastore.SettingsStore
+import app.myplayer.core.datastore.TokenStore
 import app.myplayer.core.designsystem.MyPlayerTheme
 import app.myplayer.core.model.LibraryRepository
+import app.myplayer.core.model.MediaSource
 import app.myplayer.core.security.PatternCredentialStore
 import app.myplayer.feature.lock.LockStatus
 import app.myplayer.feature.lock.LockViewModel
 import app.myplayer.feature.lock.PatternLockScreen
+import app.myplayer.feature.server.SourceFactory
 import app.myplayer.nav.AppNavHost
 import dagger.hilt.android.AndroidEntryPoint
+import okhttp3.OkHttpClient
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -28,6 +32,9 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var credentials: PatternCredentialStore
     @Inject lateinit var libraryRepository: LibraryRepository
     @Inject lateinit var serverConfigStore: ServerConfigStore
+    @Inject lateinit var tokenStore: TokenStore
+    @Inject lateinit var sourceFactory: SourceFactory
+    @Inject lateinit var client: OkHttpClient
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,11 +73,18 @@ class MainActivity : ComponentActivity() {
                 if (needsLock) {
                     PatternLockScreen(lockState, lockVm::onPointTouched, lockVm::onDrawEnd)
                 } else {
+                    val activeConfig = servers.firstOrNull()
+                    // 无服务器 → null（落引导页）；有配置但令牌缺失 → 工厂返回 null，同样落引导页等重新登录
+                    val source: MediaSource? = remember(activeConfig) { activeConfig?.let(sourceFactory::create) }
+                    val showWelcome = activeConfig == null || source == null
+
                     AppNavHost(
                         repository = libraryRepository,
-                        serverId = servers.firstOrNull()?.id,
-                        source = null,                       // ← 任务 1-14 换成 SourceFactory 造出的真实 source
-                        onAddServer = { /* ← 任务 1-13/1-14 接上 Routes.ADD_SERVER */ },
+                        serverConfigStore = serverConfigStore,
+                        tokenStore = tokenStore,
+                        client = client,
+                        serverId = if (showWelcome) null else activeConfig.id,
+                        source = source,
                     )
                 }
             }

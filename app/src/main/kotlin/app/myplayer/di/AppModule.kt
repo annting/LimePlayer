@@ -1,6 +1,7 @@
 package app.myplayer.di
 
 import android.content.Context
+import android.provider.Settings
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import app.myplayer.core.database.MediaDatabase
@@ -14,6 +15,7 @@ import app.myplayer.core.security.KeystoreSecretCipher
 import app.myplayer.core.security.PatternCredentialStore
 import app.myplayer.core.security.SecretCipher
 import app.myplayer.core.security.SecretHasher
+import app.myplayer.feature.server.SourceFactory
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -71,4 +73,17 @@ object AppModule {
 
     @Provides @Singleton
     fun okHttpClient(): OkHttpClient = HttpClientFactory.create(NetworkConfig())
+
+    /** 稳定的设备标识：Emby 用它区分会话，在重装之外保持稳定。 */
+    @Provides @Singleton
+    fun deviceId(@ApplicationContext ctx: Context): String =
+        Settings.Secure.getString(ctx.contentResolver, Settings.Secure.ANDROID_ID) ?: "unknown"
+
+    @Provides @Singleton
+    fun sourceFactory(
+        client: OkHttpClient,
+        serverConfigStore: ServerConfigStore,
+        tokenStore: TokenStore,
+        deviceId: String,
+    ): SourceFactory = SourceFactory(client, serverConfigStore, tokenStore, deviceId)
 }
