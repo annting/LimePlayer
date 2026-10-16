@@ -63,6 +63,7 @@
 | 在 Canvas 的绘制 lambda（`DrawScope`）里读 `MaterialTheme.colorScheme` | 颜色必须在 **Composable 作用域**读取后捕获进绘制 lambda —— `DrawScope` 不是 Composable 作用域，直接读编译不过（任务 1-10 实测） |
 | `pointerInput(state.status)` 用会变化的业务状态作 key | key 用 `Unit`（或稳定值）+ `rememberUpdatedState` 读最新命中器/回调 —— 手势进行中状态必然变化（IDLE→DRAWING），以状态为 key 会**取消并重启手势协程**：拖动被掐断、抬手事件丢失（真机表现为「九宫格无法滑动」，2026-10-17 修复） |
 | 在 `pointerInput` 块里读 `size` 取画布尺寸 | 尺寸改由 `Modifier.onSizeChanged` 写入状态 —— pointerInput 块启动时布局可能尚未完成，读到的 `size` 为 0，命中器以 0 边长构造后**所有触摸全部 miss**（与上一条叠加，2026-10-17 修复） |
+| 不判空直接渲染 `PrimaryScrollableTabRow` | **库列表为空时不要渲染 Tab 行** —— 零个 Tab 时 Material3 内部测量越界崩溃（`IndexOutOfBoundsException` @ `TabRow.kt`）；真机表现为「登录成功进库页瞬间闪退」（首次同步尚未拉到库列表，2026-10-17 修复，`LibraryScreenTest` 3 用例锁定） |
 
 ### 与当前工程骨架的差异（照抄前先看这条）
 
