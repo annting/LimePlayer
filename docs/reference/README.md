@@ -59,6 +59,7 @@
 | DataStore 直接 `data().map{}` | 先 `catch(IOException)` 再 `map`，损坏时退回默认值 |
 | 分页循环先累加偏移再判空页 | 先判空页、再累加、最后判 `hasMore` |
 | Manifest 里 `usesCleartextTraffic="true"` 且无 `targetSdk` | 明文用 security-config 且只在 debug 放行；`targetSdk` 显式声明在 `:app` |
+| 纯 JVM 模块只设 Kotlin 侧 `jvmTarget` | 必须同时 `java { source/targetCompatibility = VERSION_17 }`；否则 `compileTestJava`（跟随本机 JDK，如 21）与 Kotlin（17）不一致 → `Inconsistent JVM-target compatibility` 构建失败 |
 
 ### 与当前工程骨架的差异（照抄前先看这条）
 
@@ -68,7 +69,7 @@
 |---|---|---|
 | Coil 2：`coil.compose.AsyncImage`、`coil.request.ImageRequest` | **Coil 3**：包名改为 `coil3.compose.*` / `coil3.request.*`，并需额外的 `io.coil-kt.coil3:coil-network-okhttp` 依赖 | Coil 3 是当前主线，网络层被拆成独立模块 |
 | OkHttp 4.12 | OkHttp 5.5（`mockwebserver` 仍可用，但 OkHttp 5 另有一套 `mockwebserver3` API） | 版本上移 |
-| `kotlin { jvmToolchain(17) }` | Android 模块**不写任何 jvmTarget 配置**（AGP 9 内置 Kotlin 自动取 `compileOptions.targetCompatibility`）；纯 JVM 模块 `:core:model` 用 `compilerOptions.jvmTarget` | toolchain 会要求本机恰好装 JDK 17；内置 Kotlin 下 `kotlin-android` 插件已被禁止 |
+| `kotlin { jvmToolchain(17) }` | Android 模块**不写任何 jvmTarget 配置**（AGP 9 内置 Kotlin 自动取 `compileOptions.targetCompatibility`）；纯 JVM 模块 `:core:model` 用 `compilerOptions.jvmTarget` **并同时以 `java {}` 固定 Java 侧目标**（见上方避坑表） | toolchain 会要求本机恰好装 JDK 17；内置 Kotlin 下 `kotlin-android` 插件已被禁止 |
 | 模块插件块里有 `alias(libs.plugins.kotlin.android)` | **删掉** —— AGP 9 起 Kotlin 编译内置，保留该插件会直接构建失败 | 官方迁移指南 `migrate-to-built-in-kotlin` |
 | Room / Hilt 在 Task 0 就随模块脚本接入 | 版本已登记在 `libs.versions.toml`，但在任务 1-3 / 1-12 才 `apply` | 代码生成插件版本耦合最紧，先保证骨架能编译 |
 | 包名 `app.myplayer.*` | **相同** | 刻意保持一致，参考代码可直接沿用 |
