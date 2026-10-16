@@ -60,6 +60,7 @@
 | 分页循环先累加偏移再判空页 | 先判空页、再累加、最后判 `hasMore` |
 | Manifest 里 `usesCleartextTraffic="true"` 且无 `targetSdk` | 明文用 security-config 且只在 debug 放行；`targetSdk` 显式声明在 `:app` |
 | 纯 JVM 模块只设 Kotlin 侧 `jvmTarget` | 必须同时 `java { source/targetCompatibility = VERSION_17 }`；否则 `compileTestJava`（跟随本机 JDK，如 21）与 Kotlin（17）不一致 → `Inconsistent JVM-target compatibility` 构建失败 |
+| 在 Canvas 的绘制 lambda（`DrawScope`）里读 `MaterialTheme.colorScheme` | 颜色必须在 **Composable 作用域**读取后捕获进绘制 lambda —— `DrawScope` 不是 Composable 作用域，直接读编译不过（任务 1-10 实测） |
 
 ### 与当前工程骨架的差异（照抄前先看这条）
 
