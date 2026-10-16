@@ -28,3 +28,6 @@ Thumbs.db
 *.aab
 *.ap_
 *.dex
+
+# ---- 交付产物（APK 等，不入库）----
+dist/

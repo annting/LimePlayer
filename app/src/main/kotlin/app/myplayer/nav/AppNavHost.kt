@@ -15,6 +15,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.myplayer.core.datastore.ServerConfigStore
 import app.myplayer.core.datastore.TokenStore
+import app.myplayer.core.designsystem.components.EmptyState
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSize
 import app.myplayer.core.model.ImageSource
@@ -123,6 +124,8 @@ fun AppNavHost(
                         // 登录已把 ServerConfig/Token 落盘 → 回到根级，MainActivity 会重新造出 source
                         nav.navigate(Routes.LIBRARY) { popUpTo(0) }
                     },
+                    serverLabel = target.baseUrl.removePrefix("http://").removePrefix("https://"),
+                    onBack = { nav.popBackStack() },
                 )
             }
         }
@@ -146,12 +149,16 @@ fun AppNavHost(
                 // 首次进入即同步一次（分页落 Room，UI 只读 Room）
                 LaunchedEffect(sid, source) { source?.let { vm.refresh(it) } }
 
+                val configs by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+                val serverLabel = configs.firstOrNull { it.id == sid }?.name
+
                 LibraryScreen(
                     state = state,
                     loadImage = { item ->
                         source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
                     },
                     onSelectLibrary = vm::selectLibrary,
+                    serverLabel = serverLabel,
                 )
             }
         }
@@ -160,19 +167,12 @@ fun AppNavHost(
 
 @Composable
 private fun NoServerScreen(onAddServer: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("还没有添加服务器", style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "添加一台 Emby 或飞牛影视服务器后即可开始浏览。",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        EmptyState(
+            title = "还没有添加服务器",
+            description = "添加一台 Emby 服务器后即可开始浏览媒体库。",
+            actionText = "添加服务器",
+            onAction = onAddServer,
         )
-        Spacer(Modifier.height(24.dp))
-        Button(onClick = onAddServer, modifier = Modifier.height(48.dp)) { Text("添加服务器") }
     }
 }

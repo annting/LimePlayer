@@ -42,4 +42,12 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // Compose UI 测试跑在 Robolectric 上（同 :feature:lock）：渲染类问题（如空列表
+    // 越界崩溃）只有实际测量/布局才能覆盖。
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }
