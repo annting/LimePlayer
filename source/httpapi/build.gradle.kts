@@ -22,9 +22,11 @@ android {
 // jvmTarget 无需配置：AGP 9 内置 Kotlin 默认取 android.compileOptions.targetCompatibility（=17）
 
 dependencies {
-    implementation(project(":core:model"))
+    // api：公开签名含 MediaSource / PagedResult / MediaItemDto 等 `:core:model` 类型，
+    // 以及 OkHttpClient / Request 等 OkHttp 类型（构造函数与 Url 构造返回值）
+    api(project(":core:model"))
     implementation(project(":core:network"))
-    implementation(libs.okhttp)
+    api(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)

@@ -21,8 +21,11 @@ android {
 // jvmTarget 无需配置：AGP 9 内置 Kotlin 默认取 android.compileOptions.targetCompatibility（=17）
 
 dependencies {
-    implementation(project(":core:model"))
-    implementation(project(":source:httpapi"))
+    // api：EmbySource 继承 HttpMediaSource（基类与领域类型必须在消费方编译期可见），
+    // create() 签名含 OkHttpClient
+    api(project(":source:httpapi"))
+    api(project(":core:model"))
+    api(libs.okhttp)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)

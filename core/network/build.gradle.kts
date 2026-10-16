@@ -22,7 +22,8 @@ android {
 
 dependencies {
     implementation(project(":core:model"))
-    implementation(libs.okhttp)
+    // api：NetworkConfig.extraInterceptors 与 HttpClientFactory.create() 的签名含 OkHttp 类型
+    api(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.serialization.json)
 
