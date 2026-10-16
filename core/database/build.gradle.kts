@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -23,10 +24,10 @@ android {
 dependencies {
     implementation(project(":core:model"))
 
-    // TODO(1-3): Room 代码生成在任务 1-3 接入本模块：
-    //   plugins 加 alias(libs.plugins.ksp)
-    //   deps  加 implementation(libs.room.runtime) / implementation(libs.room.ktx) / ksp(libs.room.compiler)
-    //   ⚠️ 接入前先核对 KSP 与 Kotlin 的版本兼容性（docs/02-技术规范.md §2.1）
+    // Room（KSP 代码生成；版本兼容性见 docs/02-技术规范.md §2.1 规则 2/6）
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
     testImplementation(libs.truth)
