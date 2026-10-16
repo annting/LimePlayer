@@ -1,0 +1,30 @@
+# ---- Gradle ----
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# ---- 本机配置：每台机器的 SDK 路径不同，绝不提交 ----
+local.properties
+
+# ---- IDE ----
+.idea/
+*.iml
+captures/
+
+# ---- 助手工作数据（项目记忆 / 日志，不随代码走）----
+.workbuddy/
+
+# ---- 系统 ----
+.DS_Store
+Thumbs.db
+
+# ---- 签名与密钥（M5 用到）----
+*.jks
+*.keystore
+
+# ---- 应用私有数据（若曾从设备导出调试用）----
+*.apk
+*.aab
+*.ap_
+*.dex
