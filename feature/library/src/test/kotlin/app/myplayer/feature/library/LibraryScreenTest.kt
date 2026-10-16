@@ -39,6 +39,7 @@ class LibraryScreenTest {
                 state = LibraryUiState(libraries = emptyList(), selectedLibraryId = null, items = emptyList(), loading = true),
                 loadImage = { ImageSource.None },
                 onSelectLibrary = {},
+                onPlay = {},
             )
         }
         compose.waitForIdle() // 完成测量与布局即视为通过
@@ -52,6 +53,7 @@ class LibraryScreenTest {
                 state = LibraryUiState(libraries = emptyList(), selectedLibraryId = null, items = emptyList(), loading = false),
                 loadImage = { ImageSource.None },
                 onSelectLibrary = {},
+                onPlay = {},
             )
         }
         compose.waitForIdle()
@@ -70,6 +72,7 @@ class LibraryScreenTest {
                 ),
                 loadImage = { ImageSource.None },
                 onSelectLibrary = {},
+                onPlay = {},
             )
         }
         compose.waitForIdle()

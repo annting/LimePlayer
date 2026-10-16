@@ -48,6 +48,7 @@ fun LibraryScreen(
     state: LibraryUiState,
     loadImage: suspend (MediaItemDto) -> ImageSource,
     onSelectLibrary: (String) -> Unit,
+    onPlay: (MediaItemDto) -> Unit,
     modifier: Modifier = Modifier,
     serverLabel: String? = null,
 ) {
@@ -101,7 +102,7 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 items(state.items, key = { it.id }) { item ->
-                    PosterCard(item = item, loadImage = loadImage)
+                    PosterCard(item = item, loadImage = loadImage, onPlay = onPlay)
                 }
             }
         }
@@ -125,6 +126,7 @@ private fun rememberImageSource(itemId: String, load: suspend () -> ImageSource)
 private fun PosterCard(
     item: MediaItemDto,
     loadImage: suspend (MediaItemDto) -> ImageSource,
+    onPlay: (MediaItemDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val image = rememberImageSource(item.id) { loadImage(item) }
@@ -154,7 +156,7 @@ private fun PosterCard(
     Column(
         modifier = modifier
             .scale(scale)
-            .clickable(interactionSource = interaction, indication = null, onClick = { /* TODO(M2): 详情页 */ }),
+            .clickable(interactionSource = interaction, indication = null, onClick = { onPlay(item) }),
     ) {
         Box(
             modifier = Modifier
