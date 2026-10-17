@@ -40,7 +40,7 @@ data class PlayerSettings(
     val allowCleartextHttp: Boolean = false,
     val trustSelfSignedCert: Boolean = false,
     // 预览
-    val localThumbnails: Boolean = false,
+    val localThumbnails: Boolean = true,
     // 搜索
     val searchFuzzyPinyin: Boolean = false,
     val searchTraditionalSimplified: Boolean = false,

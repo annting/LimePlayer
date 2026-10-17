@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import app.myplayer.core.datastore.ServerConfigStore
 import app.myplayer.core.designsystem.components.EmptyState
+import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MediaSource
 
@@ -30,6 +31,8 @@ fun MainScaffold(
     serverConfigStore: ServerConfigStore,
     source: MediaSource?,
     serverId: String,
+    caps: ClientCapabilities,
+    localThumbnails: Boolean,
     onAddServer: () -> Unit,
     onPlay: (String) -> Unit,
 ) {
@@ -60,12 +63,16 @@ fun MainScaffold(
                     serverConfigStore = serverConfigStore,
                     source = source,
                     serverId = serverId,
+                    caps = caps,
+                    localThumbnails = localThumbnails,
                     onPlay = onPlay,
                 )
                 MainTab.SEARCH -> SearchDestination(
                     repository = repository,
                     source = source,
                     serverId = serverId,
+                    caps = caps,
+                    localThumbnails = localThumbnails,
                     onPlay = onPlay,
                 )
                 MainTab.SETTINGS -> MainPlaceholder(

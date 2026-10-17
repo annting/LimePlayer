@@ -144,6 +144,7 @@ class MainActivity : ComponentActivity() {
                 appUnlocked = unlockedFlow,
                 keepBackgroundPlayback = settings?.keepBackgroundPlayback ?: false,
                 autoPlayNext = settings?.autoPlayNext ?: true,
+                localThumbnails = settings?.localThumbnails ?: true,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
             )

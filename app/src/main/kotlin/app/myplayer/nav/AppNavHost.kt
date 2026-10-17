@@ -18,10 +18,12 @@ import androidx.navigation.navArgument
 import app.myplayer.core.datastore.ServerConfigStore
 import app.myplayer.core.datastore.TokenStore
 import app.myplayer.core.designsystem.components.EmptyState
+import app.myplayer.LocalThumbnailProvider
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSize
 import app.myplayer.core.model.ImageSource
+import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.SourceType
@@ -65,6 +67,7 @@ fun AppNavHost(
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>,
     keepBackgroundPlayback: Boolean,
     autoPlayNext: Boolean,
+    localThumbnails: Boolean,
     serverId: String?,
     source: MediaSource?,
 ) {
@@ -150,6 +153,8 @@ fun AppNavHost(
                     serverConfigStore = serverConfigStore,
                     source = source,
                     serverId = sid,
+                    caps = clientCapabilities,
+                    localThumbnails = localThumbnails,
                     onAddServer = { nav.navigate(Routes.ADD_SERVER) },
                     onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
                 )
@@ -195,14 +200,36 @@ private fun NoServerScreen(onAddServer: () -> Unit) {
     }
 }
 
+/**
+ * 海报加载：服务端有海报走服务端；**缺海报**时用本地抽帧缩略图兜底（任务 3-7）。
+ */
+private suspend fun loadPosterWithFallback(
+    item: MediaItemDto,
+    source: MediaSource?,
+    caps: ClientCapabilities,
+    thumbs: LocalThumbnailProvider?,
+): ImageSource {
+    val remote = source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM)
+    if (remote is ImageSource.None && !item.hasPoster && thumbs != null) {
+        return thumbs.image(item)
+    }
+    return remote ?: ImageSource.None
+}
+
 /** 搜索 tab：本地索引 + 输入即搜（任务 3-5 / 3-6）。 */
 @Composable
 internal fun SearchDestination(
     repository: LibraryRepository,
     source: MediaSource?,
     serverId: String,
+    caps: ClientCapabilities,
+    localThumbnails: Boolean,
     onPlay: (String) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val thumbs = remember(source, serverId, localThumbnails) {
+        if (localThumbnails && source != null) LocalThumbnailProvider(context, source, caps) else null
+    }
     val pinyin = remember { app.myplayer.feature.library.IcuPinyinConverter() }
     val vm: app.myplayer.feature.library.LibrarySearchViewModel = viewModel(
         key = "search-$serverId",
@@ -219,9 +246,7 @@ internal fun SearchDestination(
         onSubmit = { vm.rememberQuery() },
         onSelectRecent = vm::selectRecent,
         onClear = vm::clearQuery,
-        loadImage = { item ->
-            source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
-        },
+        loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
         onPlay = { item -> onPlay(item.id) },
     )
 }
@@ -233,8 +258,15 @@ internal fun LibraryDestination(
     serverConfigStore: ServerConfigStore,
     source: MediaSource?,
     serverId: String,
+    caps: ClientCapabilities,
+    localThumbnails: Boolean,
     onPlay: (String) -> Unit,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // 缺海报时的本地抽帧兜底（任务 3-7）：开关关闭或没有源时不构造
+    val thumbs = remember(source, serverId, localThumbnails) {
+        if (localThumbnails && source != null) LocalThumbnailProvider(context, source, caps) else null
+    }
     val vm: LibraryViewModel = viewModel(
         key = "library-$serverId",
         factory = object : ViewModelProvider.Factory {
@@ -253,9 +285,7 @@ internal fun LibraryDestination(
 
     LibraryScreen(
         state = state,
-        loadImage = { item ->
-            source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
-        },
+        loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
         onSelectLibrary = vm::selectLibrary,
         onPlay = { item -> onPlay(item.id) },
         onSort = vm::setSort,
