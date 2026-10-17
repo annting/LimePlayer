@@ -262,7 +262,9 @@ class PlayerViewModel(
     fun commitScrub() {
         if (!_ui.value.scrubbing) return
         val target = _ui.value.scrubPositionMs
-        _ui.update { it.copy(scrubbing = false) }
+        // 乐观更新（任务 3-3）：松手立刻把进度条落到目标位置，
+        // 不等引擎回调 —— 关键帧对齐的落点可能有 ±数秒误差，等引擎会先跳回旧位置。
+        _ui.update { it.copy(scrubbing = false, positionMs = target) }
         engine.seekTo(target)
         scheduleAutoHide()
     }

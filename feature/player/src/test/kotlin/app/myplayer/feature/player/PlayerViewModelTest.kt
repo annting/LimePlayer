@@ -392,6 +392,22 @@ class PlayerViewModelTest {
         assertThat(vm.ui.value.scaleMode).isEqualTo(ScaleMode.CROP)
     }
 
+    @Test
+    fun `拖动松手乐观更新位置并 seek`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true, positionMs = 10_000, durationMs = 100_000))
+        runCurrent()
+
+        vm.beginScrub()
+        vm.scrubTo(60_000)
+        vm.commitScrub()
+        assertThat(vm.ui.value.scrubbing).isFalse()
+        assertThat(vm.ui.value.positionMs).isEqualTo(60_000L)   // 乐观更新
+        assertThat(engine.seeks).containsExactly(60_000L)
+    }
+
     // ---- 2-7 连播与降级 ----
 
     @Test

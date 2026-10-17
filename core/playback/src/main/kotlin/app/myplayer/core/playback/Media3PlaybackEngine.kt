@@ -46,9 +46,25 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
     private val player: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
         .setHandleAudioBecomingNoisy(true)   // 耳机拔出自动暂停
+        // 缓冲调参（任务 3-3）：局域网直放 / NAS 转码都能吃得下更大的前向缓冲，
+        // 拖动后更少出现「缓冲圈」。移动网络下由系统自适应回落。
+        .setLoadControl(
+            androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    /* minBufferMs = */ 15_000,
+                    /* maxBufferMs = */ 60_000,
+                    /* bufferForPlaybackMs = */ 1_500,
+                    /* bufferForPlaybackAfterRebufferMs = */ 3_000,
+                )
+                .setPrioritizeTimeOverSizeThresholds(true)
+                .build()
+        )
         .build()
 
     init {
+        // seek 策略（任务 3-3）：对齐最近关键帧而非精确帧 —— 拖动后起播最快，
+        // 代价是落点可能偏几秒；语义符合「拖动即预览、松手即播」的播放器惯例。
+        player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
         // 音频焦点（`02` §6.4 / 任务 2-4）：请求 MEDIA 焦点，来电 / 其它应用抢焦点时自动暂停恢复
         player.setAudioAttributes(
             androidx.media3.common.AudioAttributes.Builder()
