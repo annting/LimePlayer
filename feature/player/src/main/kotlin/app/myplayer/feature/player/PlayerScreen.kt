@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -120,25 +121,36 @@ fun PlayerScreen(
         }
     }
 
-    Box(modifier.fillMaxSize().background(Color.Black)) {
-        // 视频面按**视频真实宽高比**适配（默认 FIT，`03` §5.6）：
-        // SurfaceView 若直接 fillMaxSize，视频帧会被拉伸到屏幕比例（真机实测 3:2 素材变形）。
+    Box(modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
+        // 视频面按**画面比例模式**摆放（`03` §5.6 / 任务 2-6）：
+        // · 适应：保持视频宽高比完整显示，多余方向留黑边（默认）
+        // · 填充：拉伸铺满（用户显式选择才用）
+        // · 裁剪：保持比例放大到铺满，超出屏幕部分裁掉
+        // · 原始：按视频原始像素尺寸显示
         // 宽高比未知（装载中）时先占满，就绪后按比例重排（Surface 保持绑定，不黑屏）。
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
             val vw = state.videoWidth
             val vh = state.videoHeight
-            val videoModifier = if (vw > 0 && vh > 0) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val videoModifier = if (vw <= 0 || vh <= 0) {
+                Modifier.fillMaxSize()
+            } else {
                 val videoRatio = vw.toFloat() / vh
                 val screenRatio = maxWidth / maxHeight
-                if (videoRatio >= screenRatio) {
-                    // 视频更宽 → 宽度贴满，上下留黑边
-                    Modifier.fillMaxWidth().aspectRatio(videoRatio)
-                } else {
-                    // 视频更高 → 高度贴满，左右留黑边
-                    Modifier.fillMaxHeight().aspectRatio(videoRatio)
+                when (state.scaleMode) {
+                    ScaleMode.FIT ->
+                        if (videoRatio >= screenRatio) Modifier.fillMaxWidth().aspectRatio(videoRatio)
+                        else Modifier.fillMaxHeight().aspectRatio(videoRatio)
+                    ScaleMode.FILL -> Modifier.fillMaxSize()
+                    ScaleMode.CROP -> {
+                        // 覆盖：取两个方向都铺满的最小尺寸
+                        val w = maxOf(maxWidth, maxHeight * videoRatio)
+                        Modifier.width(w).height(w / videoRatio)
+                    }
+                    ScaleMode.ORIGINAL -> with(density) {
+                        Modifier.size(vw.toDp(), vh.toDp())
+                    }
                 }
-            } else {
-                Modifier.fillMaxSize()
             }
             VideoSurface(
                 sink = vm::attachVideoSurface,
@@ -171,7 +183,19 @@ fun PlayerScreen(
                 vm = vm,
                 onBack = onBack,
                 onEnterPip = { context.findActivity()?.let { act -> enterPip(act, state) } },
+                onOpenSheet = vm::openSheet,
                 pipSupported = pipSupported,
+            )
+        }
+
+        // 设置弹层（`03` §5.6）：画面比例 / 倍速 / 音轨 / 字幕
+        if (state.sheetVisible) {
+            PlayerSettingsSheet(
+                state = state,
+                onDismiss = vm::closeSheet,
+                onScaleMode = vm::setScaleMode,
+                onSpeed = vm::setSpeed,
+                onTrack = vm::selectTrack,
             )
         }
 
@@ -331,6 +355,7 @@ private fun PlayerControls(
     vm: PlayerViewModel,
     onBack: () -> Unit,
     onEnterPip: () -> Unit,
+    onOpenSheet: () -> Unit,
     pipSupported: Boolean,
 ) {
     Column(Modifier.fillMaxSize()) {
@@ -426,7 +451,7 @@ private fun PlayerControls(
                 Text(formatTime(state.displayPositionMs), color = Color.White, style = MonoLabelStyle)
                 Spacer(Modifier.weight(1f))
                 PlayerIconButton(
-                    onClick = { /* TODO(2-6): 字幕 / 音轨 / 倍速抽屉 */ },
+                    onClick = { onOpenSheet() },
                     size = 40.dp,
                     background = Color.Transparent,
                 ) {

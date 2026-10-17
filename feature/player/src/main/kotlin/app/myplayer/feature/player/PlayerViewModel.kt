@@ -10,6 +10,7 @@ import app.myplayer.core.playback.EngineError
 import app.myplayer.core.playback.EngineStatus
 import app.myplayer.core.playback.PlaybackEngine
 import app.myplayer.core.playback.ProgressReporter
+import app.myplayer.core.playback.TrackKind
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,8 +38,11 @@ data class PlayerUiState(
     val speed: Float = 1f,
     val videoWidth: Int = 0,
     val videoHeight: Int = 0,
+    val tracks: List<app.myplayer.core.playback.TrackInfo> = emptyList(),
     val controlsVisible: Boolean = true,
     val locked: Boolean = false,
+    val sheetVisible: Boolean = false,
+    val scaleMode: ScaleMode = ScaleMode.FIT,
     val scrubbing: Boolean = false,
     val scrubPositionMs: Long = 0L,
     val error: EngineError? = null,
@@ -49,6 +53,21 @@ data class PlayerUiState(
     /** 0f..1f 的播放进度（时长未知时为 0）。 */
     val progress: Float
         get() = if (durationMs > 0L) (displayPositionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+}
+
+/**
+ * 画面比例（`03` §5.6「适应 / 填充 / 裁剪 / 原始」；自定义缩放留待后续）。
+ * 只影响视频面在屏幕上的摆放方式，不改分辨率。
+ */
+enum class ScaleMode(val label: String) {
+    /** 保持比例完整显示，多余留黑边（默认）。 */
+    FIT("适应"),
+    /** 拉伸铺满（不保持比例，用户显式选择才用）。 */
+    FILL("填充"),
+    /** 保持比例放大至铺满，超出部分裁切。 */
+    CROP("裁剪"),
+    /** 按视频原始像素尺寸显示，四周留黑。 */
+    ORIGINAL("原始"),
 }
 
 /**
@@ -88,6 +107,7 @@ class PlayerViewModel(
                         speed = es.speed,
                         videoWidth = es.videoWidth,
                         videoHeight = es.videoHeight,
+                        tracks = es.tracks,
                         error = es.error,
                     )
                 }
@@ -210,6 +230,31 @@ class PlayerViewModel(
     /** 会话级倍速（0.5–3.0，步进由 UI 控制）。 */
     fun setSpeed(speed: Float) {
         engine.setSpeed(speed.coerceIn(0.5f, 3.0f))
+        notifyInteraction()
+    }
+
+    // ---- 设置弹层（`03` §5.6 / 任务 2-6）----
+
+    /** 打开底部弹层；打开期间不自动隐藏控制层。 */
+    fun openSheet() {
+        if (_ui.value.locked) return
+        autoHideJob?.cancel()
+        _ui.update { it.copy(sheetVisible = true, controlsVisible = true) }
+    }
+
+    fun closeSheet() {
+        _ui.update { it.copy(sheetVisible = false) }
+        scheduleAutoHide()
+    }
+
+    /** 画面比例：只影响视频面摆放，立即生效。 */
+    fun setScaleMode(mode: ScaleMode) {
+        _ui.update { it.copy(scaleMode = mode) }
+    }
+
+    /** 音轨 / 字幕切换；[trackId] 为 null 表示关闭该类型（如关闭字幕）。 */
+    fun selectTrack(kind: TrackKind, trackId: String?) {
+        engine.selectTrack(kind, trackId)
         notifyInteraction()
     }
 

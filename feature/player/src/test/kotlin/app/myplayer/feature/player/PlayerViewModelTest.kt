@@ -87,7 +87,11 @@ class PlayerViewModelTest {
             _state.value = _state.value.copy(speed = speed)
         }
 
-        override fun selectTrack(kind: TrackKind, trackId: String?) = Unit
+        override fun selectTrack(kind: TrackKind, trackId: String?) {
+            trackSelections += kind to trackId
+        }
+
+        val trackSelections = mutableListOf<Pair<TrackKind, String?>>()
         override fun setVideoSurface(surface: android.view.Surface?) = Unit
         override fun release() { released = true }
 
@@ -344,5 +348,53 @@ class PlayerViewModelTest {
         runCurrent()
         // 未在播放中 → 不标记 → 恢复 no-op（playCalls 不变）
         assertThat(engine.playCalls).isEqualTo(1)   // 仅 start() 里的那次
+    }
+
+    // ---- 2-6 设置弹层 ----
+
+    @Test
+    fun `弹层开关与锁定态屏蔽`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+
+        vm.openSheet()
+        assertThat(vm.ui.value.sheetVisible).isTrue()
+        vm.closeSheet()
+        assertThat(vm.ui.value.sheetVisible).isFalse()
+
+        vm.toggleLock()
+        vm.openSheet()
+        assertThat(vm.ui.value.sheetVisible).isFalse()   // 锁定态不允许打开设置
+    }
+
+    @Test
+    fun `倍速与画面比例写入状态`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+
+        vm.setSpeed(1.5f)
+        assertThat(engine.speed).isEqualTo(1.5f)
+
+        vm.setSpeed(9f)                                  // 越界收敛到 3.0
+        assertThat(engine.speed).isEqualTo(3f)
+
+        vm.setScaleMode(ScaleMode.CROP)
+        assertThat(vm.ui.value.scaleMode).isEqualTo(ScaleMode.CROP)
+    }
+
+    @Test
+    fun `音轨与字幕选择透传引擎`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+
+        vm.selectTrack(TrackKind.AUDIO, "a:0")
+        vm.selectTrack(TrackKind.SUBTITLE, null)          // 关闭字幕
+        assertThat(engine.trackSelections).containsExactly(
+            TrackKind.AUDIO to "a:0",
+            TrackKind.SUBTITLE to null,
+        )
     }
 }
