@@ -133,4 +133,15 @@ data class TrickplaySpec(
     val tileCount: Int,
     val intervalMs: Long,
     val playlistUrl: String,
-)
+    /** 每片横向格数（`#EXT-X-TILES:LAYOUT=NxM` 的 N）；用于反算 (col,row)。 */
+    val columns: Int = 1,
+    /** 每片纵向格数。 */
+    val rows: Int = 1,
+) {
+    /** 播放位置 → 分片索引（越界收敛）。 */
+    fun tileIndexAt(positionMs: Long): Int =
+        ((positionMs.coerceAtLeast(0L) / intervalMs).toInt()).coerceIn(0, (tileCount - 1).coerceAtLeast(0))
+
+    /** 分片索引 → (列, 行)。 */
+    fun cellOf(index: Int): Pair<Int, Int> = (index % columns) to (index / columns)
+}

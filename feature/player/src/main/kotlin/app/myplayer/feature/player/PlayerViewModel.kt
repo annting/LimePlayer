@@ -58,6 +58,8 @@ data class PlayerUiState(
     val finished: Boolean = false,
     /** 连播浮层里要显示的下一集（null = 没有下一集）。 */
     val nextEpisode: MediaItemDto? = null,
+    /** trickplay 预览规格（null = 该源 / 该条目无预览，`02` §R4 降级）。 */
+    val trickplay: app.myplayer.core.model.TrickplaySpec? = null,
 ) {
     /** 进度条应显示的位置：拖动中显示预览位置（commit-on-release，`03` §5.4）。 */
     val displayPositionMs: Long get() = if (scrubbing) scrubPositionMs else positionMs
@@ -178,6 +180,9 @@ class PlayerViewModel(
             engine.play()
             // 相邻集异步加载（不阻塞起播；网络失败就等于没有连播）
             adjacent = runCatching { source.getAdjacentEpisodes(item) }.getOrElse { AdjacentEpisodes() }
+            // trickplay 预览规格异步加载（服务端未预生成 → null，进度条无预览但不影响播放）
+            val spec = runCatching { source.getTrickplay(item, TRICKPLAY_WIDTH) }.getOrNull()
+            _ui.update { it.copy(trickplay = spec) }
             scheduleAutoHide()
             // 启动进度上报（开始 / 每 10s / 暂停 / 结束，随 ViewModel 生命周期）
             sessionSource = source
@@ -414,6 +419,14 @@ class PlayerViewModel(
         start(item.id, src, caps, autoPlayNextEnabled)
     }
 
+    /** 拖动到某位置时该显示的预览分片图（无 trickplay 时返回 null）。 */
+    suspend fun previewTile(positionMs: Long): app.myplayer.core.model.ImageSource? {
+        val spec = _ui.value.trickplay ?: return null
+        val item = sessionItem ?: return null
+        val src = sessionSource ?: return null
+        return runCatching { src.trickplayTile(item, spec.width, spec.tileIndexAt(positionMs)) }.getOrNull()
+    }
+
     /** 视频输出面绑定：SurfaceView 的生命周期回调经此透传给引擎。 */
     fun attachVideoSurface(surface: android.view.Surface?) = engine.setVideoSurface(surface)
 
@@ -448,5 +461,7 @@ class PlayerViewModel(
         /** 连播浮层出现阈值（`03` §5.7：播至 90%）。 */
         const val NEXT_UP_THRESHOLD_PERCENT = 90
         const val NEXT_UP_COUNTDOWN_SECONDS = 10
+        /** trickplay 请求宽度档位（Emby 常见预生成档：320）。 */
+        const val TRICKPLAY_WIDTH = 320
     }
 }

@@ -147,8 +147,13 @@ abstract class HttpMediaSource(
             tileCount = parsed.segmentCount,
             intervalMs = parsed.intervalMs,
             playlistUrl = api.trickplayPlaylistUrl(item.id, width),
+            columns = parsed.columns,
+            rows = parsed.rows,
         )
     }.getOrNull()
+
+    override suspend fun trickplayTile(item: MediaItemDto, width: Int, index: Int): ImageSource =
+        ImageSource.Remote(api.trickplayTileUrl(item.id, width, index), api.authHeaders())
 
     /**
      * 进度上报（`02` §6.4）。语义映射（ProgressReporter 编排，见 `:core:playback`）：

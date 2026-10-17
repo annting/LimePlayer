@@ -225,6 +225,21 @@ fun PlayerScreen(
             }
         }
 
+        // 拖动预览（`03` §5.4 / 任务 3-2）：有 trickplay 才显示，无预览不影响拖动
+        if (state.scrubbing) {
+            state.trickplay?.let { spec ->
+                TrickplayPreview(
+                    vm = vm,
+                    spec = spec,
+                    positionMs = state.scrubPositionMs,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 132.dp),
+                )
+            }
+        }
+
         // 连播浮层（`03` §5.7：90% 出现「下一集 + 10s 倒计时」）
         if (state.nextUpVisible) {
             NextUpCard(

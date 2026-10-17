@@ -25,6 +25,9 @@ interface MediaSource {
     suspend fun image(item: MediaItemDto, kind: ImageKind, size: ImageSize): ImageSource
     suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan
     suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec?
+
+    /** trickplay 分片图（[index] 来自 [TrickplaySpec.tileIndexAt]）；不支持时返回 [ImageSource.None]。 */
+    suspend fun trickplayTile(item: MediaItemDto, width: Int, index: Int): ImageSource = ImageSource.None
     suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState)
 
     /**
