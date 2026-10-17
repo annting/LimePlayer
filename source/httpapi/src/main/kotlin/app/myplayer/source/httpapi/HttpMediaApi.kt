@@ -131,6 +131,27 @@ class HttpMediaApi(
                 .applyAuth().build()
         ).items
 
+    // ---- trickplay（`05` §6；任务 3-1）----
+
+    /** 分片清单 URL（不带令牌，鉴权走请求头）。 */
+    fun trickplayPlaylistUrl(itemId: String, width: Int): String =
+        url("/Videos/$itemId/Trickplay/$width/tiles.m3u8").toString()
+
+    /** 单个分片图片 URL（`index` 从 0 起）。 */
+    fun trickplayTileUrl(itemId: String, width: Int, index: Int): String =
+        url("/Videos/$itemId/Trickplay/$width/$index.jpg").toString()
+
+    /** 拉取分片清单原文；服务端未预生成时返回 404（由调用方降级为 null）。 */
+    suspend fun getTrickplayPlaylist(itemId: String, width: Int): String =
+        withContext(Dispatchers.IO) {
+            client.newCall(
+                Request.Builder().url(trickplayPlaylistUrl(itemId, width)).applyAuth().build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) throw ApiException.fromStatus(resp.code, resp.body.string())
+                resp.body.string()
+            }
+        }
+
     /** 图片 URL **不带令牌**；鉴权走 [authHeaders]，由 Coil 的请求头注入。 */
     fun imageUrl(itemId: String, kind: String, maxWidth: Int): String =
         url("/Items/$itemId/Images/$kind", mapOf("maxWidth" to maxWidth.toString())).toString()

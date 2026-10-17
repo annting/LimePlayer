@@ -133,7 +133,22 @@ abstract class HttpMediaSource(
         return if (raw.startsWith("/")) "$base$raw" else "$base/$raw"
     }
 
-    override suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec? = null // M3 实现
+    /**
+     * trickplay 分片清单（`05` §6 / 任务 3-1）。
+     * 服务端未开启预生成 / 端点不存在 → 返回 null（UI 降级为无预览，`02` §R4）。
+     */
+    override suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec? = runCatching {
+        val text = api.getTrickplayPlaylist(item.id, width)
+        val parsed = TrickplayPlaylist.parse(text) ?: return null
+        TrickplaySpec(
+            width = width,
+            tileWidth = parsed.tileWidth,
+            tileHeight = parsed.tileHeight,
+            tileCount = parsed.segmentCount,
+            intervalMs = parsed.intervalMs,
+            playlistUrl = api.trickplayPlaylistUrl(item.id, width),
+        )
+    }.getOrNull()
 
     /**
      * 进度上报（`02` §6.4）。语义映射（ProgressReporter 编排，见 `:core:playback`）：
