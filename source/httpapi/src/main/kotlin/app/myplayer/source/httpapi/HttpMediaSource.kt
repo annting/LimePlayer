@@ -116,14 +116,16 @@ abstract class HttpMediaSource(
      * 未经过 [planPlayback]（无会话）时不发任何请求。
      */
     override suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState) {
-        val s = session ?: return
+        val s = session
+        android.util.Log.d("LimeReport", "reportProgress state=$state sessionNull=${s == null} pos=${pos.inWholeSeconds}s")
+        val sess = s ?: return
         val request = PlaybackReportRequest(
             itemId = item.id,
-            mediaSourceId = s.mediaSourceId,
+            mediaSourceId = sess.mediaSourceId,
             positionTicks = pos.inWholeMilliseconds * 10_000L,
             isPaused = state == PlayState.PAUSED,
-            playMethod = s.playMethod,
-            playSessionId = s.playSessionId,
+            playMethod = sess.playMethod,
+            playSessionId = sess.playSessionId,
         )
         when (state) {
             PlayState.PLAYING -> if (!reportedStart) {

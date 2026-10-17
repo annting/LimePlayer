@@ -147,6 +147,7 @@ class HttpMediaApi(
     /** 上报接口返回 204 No Content（无响应体），只需判状态码。 */
     private suspend fun postReport(path: String, request: PlaybackReportRequest) {
         val body = json.encodeToString(request)
+        android.util.Log.d("LimeReport", "POST $path body=$body")
         withContext(Dispatchers.IO) {
             client.newCall(
                 Request.Builder()
@@ -155,6 +156,7 @@ class HttpMediaApi(
                     .applyAuth()
                     .build()
             ).execute().use { resp ->
+                android.util.Log.d("LimeReport", "→ $path ${resp.code}")
                 if (!resp.isSuccessful) throw ApiException.fromStatus(resp.code, resp.body.string())
             }
         }

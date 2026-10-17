@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaSource
+import app.myplayer.core.model.PlayState
 import app.myplayer.core.playback.EngineError
 import app.myplayer.core.playback.EngineStatus
 import app.myplayer.core.playback.PlaybackEngine
@@ -16,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * 播放页 UI 状态（`03` §5.1 状态机）。
@@ -67,6 +69,10 @@ class PlayerViewModel(
     private var startedItemId: String? = null
     private var reporter: ProgressReporter? = null
 
+    /** 会话上下文快照：供 onCleared 在 viewModelScope 取消后补报 STOPPED。 */
+    private var sessionSource: MediaSource? = null
+    private var sessionItem: MediaItemDto? = null
+
     init {
         viewModelScope.launch {
             engine.state.collect { es ->
@@ -97,6 +103,8 @@ class PlayerViewModel(
             engine.play()
             scheduleAutoHide()
             // 启动进度上报（开始 / 每 10s / 暂停 / 结束，随 ViewModel 生命周期）
+            sessionSource = source
+            sessionItem = item
             reporter = reporterFactory?.invoke(source, item)?.also { it.start(viewModelScope) }
         }
     }
@@ -176,6 +184,19 @@ class PlayerViewModel(
     fun attachVideoSurface(surface: android.view.Surface?) = engine.setVideoSurface(surface)
 
     override fun onCleared() {
+        // viewModelScope 此时已取消：用独立 scope 把 STOPPED 补报出去（fire-and-forget）。
+        // 不做的话服务端没有播放结束记录，PlayCount 不涨、「继续观看」只能靠最后一次 10s 周期上报兜底。
+        val src = sessionSource
+        val item = sessionItem
+        if (src != null && item != null) {
+            val pos = _ui.value.positionMs
+            @OptIn(kotlinx.coroutines.DelicateCoroutinesApi::class)
+            kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    src.reportProgress(item, pos.milliseconds, PlayState.STOPPED)
+                }
+            }
+        }
         engine.release()
     }
 
