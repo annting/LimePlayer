@@ -249,3 +249,47 @@ fun SettingsIcon(tint: Color, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** 首页（房子）。 */
+@Composable
+fun HomeIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(20.dp)) {
+        val w = size.width; val h = size.height
+        val roof = Path().apply {
+            moveTo(w * 0.12f, h * 0.46f)
+            lineTo(w * 0.5f, h * 0.14f)
+            lineTo(w * 0.88f, h * 0.46f)
+        }
+        drawPath(roof, color = tint, style = iconStroke(w))
+        val body = Path().apply {
+            moveTo(w * 0.22f, h * 0.42f)
+            lineTo(w * 0.22f, h * 0.84f)
+            lineTo(w * 0.78f, h * 0.84f)
+            lineTo(w * 0.78f, h * 0.42f)
+        }
+        drawPath(body, color = tint, style = iconStroke(w))
+        drawLine(tint, Offset(w * 0.44f, h * 0.84f), Offset(w * 0.44f, h * 0.64f), strokeWidth = iconStroke(w).width, cap = StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.44f, h * 0.64f), Offset(w * 0.58f, h * 0.64f), strokeWidth = iconStroke(w).width, cap = StrokeCap.Round)
+        drawLine(tint, Offset(w * 0.58f, h * 0.64f), Offset(w * 0.58f, h * 0.84f), strokeWidth = iconStroke(w).width, cap = StrokeCap.Round)
+    }
+}
+
+/** 媒体库（四宫格）。 */
+@Composable
+fun GridIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(20.dp)) {
+        val w = size.width; val h = size.height
+        val s = iconStroke(w * 0.9f)
+        for (r in 0..1) {
+            for (c in 0..1) {
+                drawRoundRect(
+                    color = tint,
+                    topLeft = Offset(w * (0.16f + 0.36f * c), h * (0.16f + 0.36f * r)),
+                    size = androidx.compose.ui.geometry.Size(w * 0.28f, h * 0.28f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.05f),
+                    style = s,
+                )
+            }
+        }
+    }
+}

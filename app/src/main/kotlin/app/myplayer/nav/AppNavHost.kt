@@ -68,7 +68,7 @@ fun AppNavHost(
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<PendingServer?>(null) }
 
-    NavHost(nav, startDestination = if (serverId == null) Routes.WELCOME else Routes.LIBRARY) {
+    NavHost(nav, startDestination = if (serverId == null) Routes.WELCOME else Routes.MAIN) {
 
         composable(Routes.WELCOME) {
             NoServerScreen(onAddServer = { nav.navigate(Routes.ADD_SERVER) })
@@ -127,7 +127,7 @@ fun AppNavHost(
                     onSubmit = { scope.launch { loginVm.submit() } },
                     onLoggedIn = {
                         // 登录已把 ServerConfig/Token 落盘 → 回到根级，MainActivity 会重新造出 source
-                        nav.navigate(Routes.LIBRARY) { popUpTo(0) }
+                        nav.navigate(Routes.MAIN) { popUpTo(0) }
                     },
                     serverLabel = target.baseUrl.removePrefix("http://").removePrefix("https://"),
                     onBack = { nav.popBackStack() },
@@ -135,36 +135,19 @@ fun AppNavHost(
             }
         }
 
-        composable(Routes.LIBRARY) {
+        composable(Routes.MAIN) {
             val sid = serverId
             if (sid == null) {
                 // 配置尚未就绪（登录落盘与重组的短暂过渡态）：避免 serverId!! 崩溃
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else {
-                val vm: LibraryViewModel = viewModel(
-                    key = "library-$sid",
-                    factory = object : ViewModelProvider.Factory {
-                        @Suppress("UNCHECKED_CAST")
-                        override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                            LibraryViewModel(repository, sid) as T
-                    },
-                )
-                val state by vm.state.collectAsStateWithLifecycle()
-
-                // 首次进入即同步一次（分页落 Room，UI 只读 Room）
-                LaunchedEffect(sid, source) { source?.let { vm.refresh(it) } }
-
-                val configs by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-                val serverLabel = configs.firstOrNull { it.id == sid }?.name
-
-                LibraryScreen(
-                    state = state,
-                    loadImage = { item ->
-                        source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
-                    },
-                    onSelectLibrary = vm::selectLibrary,
-                    onPlay = { item -> nav.navigate("${Routes.PLAYER}/${item.id}") },
-                    serverLabel = serverLabel,
+                MainScaffold(
+                    repository = repository,
+                    serverConfigStore = serverConfigStore,
+                    source = source,
+                    serverId = sid,
+                    onAddServer = { nav.navigate(Routes.ADD_SERVER) },
+                    onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
                 )
             }
         }
@@ -200,4 +183,40 @@ private fun NoServerScreen(onAddServer: () -> Unit) {
             onAction = onAddServer,
         )
     }
+}
+
+/** 媒体库 tab：库页（库 Tab + 海报网格）。ViewModel 以 serverId 为 key 持久，切换 tab 不丢状态。 */
+@Composable
+internal fun LibraryDestination(
+    repository: LibraryRepository,
+    serverConfigStore: ServerConfigStore,
+    source: MediaSource?,
+    serverId: String,
+    onPlay: (String) -> Unit,
+) {
+    val vm: LibraryViewModel = viewModel(
+        key = "library-$serverId",
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                LibraryViewModel(repository, serverId) as T
+        },
+    )
+    val state by vm.state.collectAsStateWithLifecycle()
+
+    // 首次进入即同步一次（分页落 Room，UI 只读 Room）
+    LaunchedEffect(serverId, source) { source?.let { vm.refresh(it) } }
+
+    val configs by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
+    val serverLabel = configs.firstOrNull { it.id == serverId }?.name
+
+    LibraryScreen(
+        state = state,
+        loadImage = { item ->
+            source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
+        },
+        onSelectLibrary = vm::selectLibrary,
+        onPlay = { item -> onPlay(item.id) },
+        serverLabel = serverLabel,
+    )
 }
