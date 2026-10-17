@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -120,7 +121,30 @@ fun PlayerScreen(
     }
 
     Box(modifier.fillMaxSize().background(Color.Black)) {
-        VideoSurface(sink = vm::attachVideoSurface)
+        // 视频面按**视频真实宽高比**适配（默认 FIT，`03` §5.6）：
+        // SurfaceView 若直接 fillMaxSize，视频帧会被拉伸到屏幕比例（真机实测 3:2 素材变形）。
+        // 宽高比未知（装载中）时先占满，就绪后按比例重排（Surface 保持绑定，不黑屏）。
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+            val vw = state.videoWidth
+            val vh = state.videoHeight
+            val videoModifier = if (vw > 0 && vh > 0) {
+                val videoRatio = vw.toFloat() / vh
+                val screenRatio = maxWidth / maxHeight
+                if (videoRatio >= screenRatio) {
+                    // 视频更宽 → 宽度贴满，上下留黑边
+                    Modifier.fillMaxWidth().aspectRatio(videoRatio)
+                } else {
+                    // 视频更高 → 高度贴满，左右留黑边
+                    Modifier.fillMaxHeight().aspectRatio(videoRatio)
+                }
+            } else {
+                Modifier.fillMaxSize()
+            }
+            VideoSurface(
+                sink = vm::attachVideoSurface,
+                modifier = Modifier.align(Alignment.Center).then(videoModifier),
+            )
+        }
 
         GestureLayer(vm = vm, locked = state.locked, onIndicator = { indicator = it })
 
