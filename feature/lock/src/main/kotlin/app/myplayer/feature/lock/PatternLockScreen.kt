@@ -4,6 +4,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
@@ -95,6 +96,19 @@ fun PatternLockScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
+            // 不透明底色：本组件现在作为**覆盖层**叠在导航内容之上（任务 2-5 覆盖式锁屏），
+            // 只画光晕会导致下方内容透出（真机实测：底部导航与视频列表可见）。
+            .background(MaterialTheme.colorScheme.background)
+            // 拦截全部触摸：覆盖层没有可点击节点时事件会穿透到下层（底部导航仍可点）。
+            // 在 Final 阶段消费 —— 子级（九宫格绘制）的 Main 阶段处理已经完成，不影响解锁手势。
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Final)
+                            .changes.forEach { it.consume() }
+                    }
+                }
+            }
             .drawBehind {
                 // 顶部暖光 + 底部冷光（设计板 .veil，双主题共用固定色）
                 drawRect(
