@@ -49,6 +49,9 @@ fun LibraryScreen(
     loadImage: suspend (MediaItemDto) -> ImageSource,
     onSelectLibrary: (String) -> Unit,
     onPlay: (MediaItemDto) -> Unit,
+    onSort: (SortSpec) -> Unit = {},
+    onFilter: (FilterSpec) -> Unit = {},
+    onResetFilter: () -> Unit = {},
     modifier: Modifier = Modifier,
     serverLabel: String? = null,
 ) {
@@ -77,6 +80,20 @@ fun LibraryScreen(
             }
         }
 
+        // ---- 排序 / 筛选入口（`02` §6.3；一个弹层收两段） ----
+        var sheetVisible by remember { mutableStateOf(false) }
+        SortFilterBar(sort = state.sort, filter = state.filter, onClick = { sheetVisible = true })
+        if (sheetVisible) {
+            SortFilterSheet(
+                sort = state.sort,
+                filter = state.filter,
+                onDismiss = { sheetVisible = false },
+                onSort = onSort,
+                onFilter = onFilter,
+                onReset = onResetFilter,
+            )
+        }
+
         // ---- 内容区三态：骨架屏 / 空态 / 网格 ----
         when {
             state.loading -> SkeletonGrid()
@@ -86,6 +103,11 @@ fun LibraryScreen(
                     EmptyState(
                         title = "还没有媒体库",
                         description = "服务器上没有可见的媒体库，或同步尚未完成。",
+                    )
+                } else if (state.totalCount > 0) {
+                    EmptyState(
+                        title = "没有符合条件的条目",
+                        description = "当前筛选条件下没有结果（共 ${state.totalCount} 条），试试放宽筛选。",
                     )
                 } else {
                     EmptyState(

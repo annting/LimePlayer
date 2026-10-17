@@ -227,6 +227,9 @@ internal fun LibraryDestination(
         },
         onSelectLibrary = vm::selectLibrary,
         onPlay = { item -> onPlay(item.id) },
+        onSort = vm::setSort,
+        onFilter = vm::setFilter,
+        onResetFilter = vm::resetFilter,
         serverLabel = serverLabel,
     )
 }
