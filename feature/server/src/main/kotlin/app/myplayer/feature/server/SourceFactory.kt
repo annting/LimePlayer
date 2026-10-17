@@ -6,6 +6,7 @@ import app.myplayer.core.datastore.TokenStore
 import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.SourceType
 import app.myplayer.source.emby.EmbySource
+import app.myplayer.source.jellyfin.JellyfinSource
 import okhttp3.OkHttpClient
 
 /**
@@ -35,7 +36,17 @@ class SourceFactory(
                 userId = userId,
                 deviceId = deviceId,
             )
-            // JELLYFIN 在 M4 接入；LOCAL 在 L2。M1 不会走到这里。
+            SourceType.JELLYFIN -> JellyfinSource.create(
+                client = client,
+                baseUrl = config.baseUrl,
+                serverId = config.id,
+                token = token,
+                userId = userId,
+                deviceId = deviceId,
+                // 前缀留空；飞牛 / 反代实测有前缀时在 ServerConfig 加字段后传进来（`02` §R4）
+                prefix = "",
+            )
+            // LOCAL 在 L2。
             else -> null
         }
     }

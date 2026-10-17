@@ -41,6 +41,7 @@ include(
     ":core:playback",
     ":source:httpapi",
     ":source:emby",
+    ":source:jellyfin",
     ":feature:library",
     ":feature:lock",
     ":feature:player",

@@ -31,6 +31,7 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":source:httpapi"))
     implementation(project(":source:emby"))
+    implementation(project(":source:jellyfin"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
