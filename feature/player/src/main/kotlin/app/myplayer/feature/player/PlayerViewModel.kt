@@ -8,6 +8,7 @@ import app.myplayer.core.model.MediaSource
 import app.myplayer.core.playback.EngineError
 import app.myplayer.core.playback.EngineStatus
 import app.myplayer.core.playback.PlaybackEngine
+import app.myplayer.core.playback.ProgressReporter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +55,9 @@ data class PlayerUiState(
  */
 class PlayerViewModel(
     private val engine: PlaybackEngine,
+    private val reporterFactory: ((MediaSource, MediaItemDto) -> ProgressReporter?)? = { source, item ->
+        ProgressReporter(engine, source, item)
+    },
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(PlayerUiState())
@@ -61,6 +65,7 @@ class PlayerViewModel(
 
     private var autoHideJob: Job? = null
     private var startedItemId: String? = null
+    private var reporter: ProgressReporter? = null
 
     init {
         viewModelScope.launch {
@@ -91,6 +96,8 @@ class PlayerViewModel(
             engine.prepare(plan, item.userData.resumePositionTicks.millis)
             engine.play()
             scheduleAutoHide()
+            // 启动进度上报（开始 / 每 10s / 暂停 / 结束，随 ViewModel 生命周期）
+            reporter = reporterFactory?.invoke(source, item)?.also { it.start(viewModelScope) }
         }
     }
 

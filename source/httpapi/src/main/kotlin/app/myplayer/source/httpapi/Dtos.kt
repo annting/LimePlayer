@@ -82,4 +82,17 @@ data class ItemsResponseDto(
 @Serializable
 data class PlaybackInfoResponseDto(
     @SerialName("MediaSources") val mediaSources: List<MediaSourceInfoDto> = emptyList(),
+    @SerialName("PlaySessionId") val playSessionId: String? = null,
+)
+
+/** 播放进度上报请求体（`/Sessions/Playing*` 共用；`02` §6.4）。 */
+@Serializable
+data class PlaybackReportRequest(
+    @SerialName("ItemId") val itemId: String,
+    @SerialName("MediaSourceId") val mediaSourceId: String? = null,
+    @SerialName("PositionTicks") val positionTicks: Long = 0,
+    @SerialName("IsPaused") val isPaused: Boolean = false,
+    @SerialName("IsMuted") val isMuted: Boolean = false,
+    @SerialName("PlayMethod") val playMethod: String = "DirectPlay",
+    @SerialName("PlaySessionId") val playSessionId: String? = null,
 )

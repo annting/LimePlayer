@@ -124,7 +124,8 @@ class PlayerViewModelTest {
     )
 
     private fun vm(engine: FakeEngine, source: FakeSource): PlayerViewModel =
-        PlayerViewModel(engine).also { it.start("i1", source, caps) }
+        // reporterFactory = null：进度上报协程是无限 collect，会卡住 runTest；这里只测播放状态机
+        PlayerViewModel(engine, reporterFactory = null).also { it.start("i1", source, caps) }
 
     // ---- 用例 ----
 

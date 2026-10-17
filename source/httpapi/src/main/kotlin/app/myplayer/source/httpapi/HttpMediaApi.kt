@@ -5,6 +5,7 @@ import app.myplayer.core.network.ApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -131,6 +132,33 @@ class HttpMediaApi(
 
     private fun Request.Builder.applyAuth(): Request.Builder =
         apply { authHeaders().forEach { (k, v) -> addHeader(k, v) } }
+
+    // ---- 进度上报（`02` §6.4）----
+
+    /** 开始播放。 */
+    suspend fun reportPlaybackStart(request: PlaybackReportRequest) = postReport("/Sessions/Playing", request)
+
+    /** 播放中进度（每 10s）或暂停。 */
+    suspend fun reportPlaybackProgress(request: PlaybackReportRequest) = postReport("/Sessions/Playing/Progress", request)
+
+    /** 结束播放。 */
+    suspend fun reportPlaybackStopped(request: PlaybackReportRequest) = postReport("/Sessions/Playing/Stopped", request)
+
+    /** 上报接口返回 204 No Content（无响应体），只需判状态码。 */
+    private suspend fun postReport(path: String, request: PlaybackReportRequest) {
+        val body = json.encodeToString(request)
+        withContext(Dispatchers.IO) {
+            client.newCall(
+                Request.Builder()
+                    .url(url(path))
+                    .post(body.toRequestBody("application/json".toMediaType()))
+                    .applyAuth()
+                    .build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) throw ApiException.fromStatus(resp.code, resp.body.string())
+            }
+        }
+    }
 
     private fun String.esc() = replace("\\", "\\\\").replace("\"", "\\\"")
 }

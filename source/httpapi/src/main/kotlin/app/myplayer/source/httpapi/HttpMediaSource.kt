@@ -1,6 +1,7 @@
 package app.myplayer.source.httpapi
 
 import app.myplayer.core.model.*
+import java.util.UUID
 import kotlin.time.Duration
 
 /**
@@ -13,6 +14,10 @@ abstract class HttpMediaSource(
 ) : MediaSource {
 
     override val serverId: String get() = api.config.serverId
+
+    /** 当前播放会话（`planPlayback` 时建立；进度上报需要其中的 PlayMethod / PlaySessionId / MediaSourceId）。 */
+    private var session: PlaybackSession? = null
+    private var reportedStart = false
 
     abstract fun mapItem(dto: BaseItemDto, libraryId: String?): MediaItemDto
     abstract fun buildDeviceProfile(caps: ClientCapabilities): String
@@ -62,7 +67,7 @@ abstract class HttpMediaSource(
         val token = api.config.token
         val transcodingUrl = source?.transcodingUrl?.takeIf { it.isNotBlank() }?.let(::playbackUrl)
 
-        return when {
+        val plan = when {
             source?.supportsDirectPlay == true ->
                 PlaybackPlan.Direct(
                     uri = api.directStreamUrl(item.id, mediaSourceId, token),
@@ -78,6 +83,16 @@ abstract class HttpMediaSource(
                 )
             else -> error("该条目既不能直放也不能转码：${item.id}")
         }
+
+        // 记录会话上下文，供 reportProgress 上报（PlayMethod / PlaySessionId / MediaSourceId）
+        session = PlaybackSession(
+            itemId = item.id,
+            mediaSourceId = mediaSourceId,
+            playMethod = plan.playMethod(),
+            playSessionId = info.playSessionId ?: UUID.randomUUID().toString(),
+        )
+        reportedStart = false
+        return plan
     }
 
     /**
@@ -92,5 +107,50 @@ abstract class HttpMediaSource(
 
     override suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec? = null // M3 实现
 
-    override suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState) = Unit // M2 实现
+    /**
+     * 进度上报（`02` §6.4）。语义映射（ProgressReporter 编排，见 `:core:playback`）：
+     * - 首次 [PlayState.PLAYING] → `POST /Sessions/Playing`（开始播放，一次性）；
+     * - 之后 [PlayState.PLAYING] → `POST /Sessions/Playing/Progress`（播放中每 10s）；
+     * - [PlayState.PAUSED] → `Progress`（isPaused=true，暂停立即）；
+     * - [PlayState.STOPPED] → `Stopped`（退出 / 结束）。
+     * 未经过 [planPlayback]（无会话）时不发任何请求。
+     */
+    override suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState) {
+        val s = session ?: return
+        val request = PlaybackReportRequest(
+            itemId = item.id,
+            mediaSourceId = s.mediaSourceId,
+            positionTicks = pos.inWholeMilliseconds * 10_000L,
+            isPaused = state == PlayState.PAUSED,
+            playMethod = s.playMethod,
+            playSessionId = s.playSessionId,
+        )
+        when (state) {
+            PlayState.PLAYING -> if (!reportedStart) {
+                api.reportPlaybackStart(request)
+                reportedStart = true
+            } else {
+                api.reportPlaybackProgress(request)
+            }
+            PlayState.PAUSED -> api.reportPlaybackProgress(request)
+            PlayState.STOPPED -> {
+                api.reportPlaybackStopped(request)
+                reportedStart = false
+            }
+        }
+    }
+}
+
+/** 播放会话上下文（上报所需，`planPlayback` 时建立）。 */
+private data class PlaybackSession(
+    val itemId: String,
+    val mediaSourceId: String,
+    val playMethod: String,
+    val playSessionId: String,
+)
+
+/** `PlaybackPlan` → Emby 的 PlayMethod 值。 */
+private fun PlaybackPlan.playMethod(): String = when (this) {
+    is PlaybackPlan.Direct -> "DirectPlay"
+    is PlaybackPlan.Transcode -> if (isRemuxOnly) "DirectStream" else "Transcode"
 }
