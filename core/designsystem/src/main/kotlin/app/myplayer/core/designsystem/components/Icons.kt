@@ -293,3 +293,27 @@ fun GridIcon(tint: Color, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** 画中画（外框 + 右下角小窗，与设置抽屉并列在控制层）。 */
+@Composable
+fun PictureInPictureIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(18.dp)) {
+        val w = size.width; val h = size.height
+        val s = iconStroke(w * 0.9f)
+        // 外框
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.1f, h * 0.18f),
+            size = androidx.compose.ui.geometry.Size(w * 0.8f, h * 0.64f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.12f),
+            style = s,
+        )
+        // 右下角小窗（实心，形成对比）
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(w * 0.5f, h * 0.5f),
+            size = androidx.compose.ui.geometry.Size(w * 0.32f, h * 0.24f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.06f),
+        )
+    }
+}

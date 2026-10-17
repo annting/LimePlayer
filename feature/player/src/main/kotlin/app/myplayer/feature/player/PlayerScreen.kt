@@ -62,6 +62,7 @@ import app.myplayer.core.designsystem.MonoLabelStyle
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.LockOpenIcon
 import app.myplayer.core.designsystem.components.PauseIcon
+import app.myplayer.core.designsystem.components.PictureInPictureIcon
 import app.myplayer.core.designsystem.components.PlayIcon
 import app.myplayer.core.designsystem.components.SeekBackIcon
 import app.myplayer.core.designsystem.components.SeekForwardIcon
@@ -89,6 +90,13 @@ fun PlayerScreen(
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     var indicator by remember { mutableStateOf<SystemIndicator?>(null) }
+
+    // 画中画入口（手动触发；自动触发与「切后台自动暂停」冲突，2026-10-18 用户要求改为按钮）
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val pipSupported = remember(context) {
+        context.findActivity() != null &&
+            context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+    }
 
     // 切后台自动暂停（`02` §6.7）：ON_STOP = 锁屏 / 切走 / 最近任务（画中画不停，因为仍可见）
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -134,7 +142,13 @@ fun PlayerScreen(
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            PlayerControls(state = state, vm = vm, onBack = onBack)
+            PlayerControls(
+                state = state,
+                vm = vm,
+                onBack = onBack,
+                onEnterPip = { context.findActivity()?.let { act -> enterPip(act, state) } },
+                pipSupported = pipSupported,
+            )
         }
 
         // 锁定态：只留解锁入口
@@ -292,6 +306,8 @@ private fun PlayerControls(
     state: PlayerUiState,
     vm: PlayerViewModel,
     onBack: () -> Unit,
+    onEnterPip: () -> Unit,
+    pipSupported: Boolean,
 ) {
     Column(Modifier.fillMaxSize()) {
         // 顶部：返回 + 标题 + 锁定
@@ -392,6 +408,17 @@ private fun PlayerControls(
                 ) {
                     SettingsIcon(tint = Color.White.copy(alpha = 0.85f))
                 }
+                // 画中画入口（任务 2-4 调整：自动进 PiP 与后台自动暂停冲突，改手动）
+                if (pipSupported) {
+                    Spacer(Modifier.width(4.dp))
+                    PlayerIconButton(
+                        onClick = { vm.notifyInteraction(); onEnterPip() },
+                        size = 40.dp,
+                        background = Color.Transparent,
+                    ) {
+                        PictureInPictureIcon(tint = Color.White.copy(alpha = 0.85f))
+                    }
+                }
                 Spacer(Modifier.weight(1f))
                 Text(
                     formatTime(state.durationMs),
@@ -483,6 +510,27 @@ private fun Context.findActivity(): Activity? {
         ctx = ctx.baseContext
     }
     return null
+}
+
+/** 进入画中画：宽高比取视频实际尺寸，越界收敛到 PiP 允许的 2.39:1 ～ 1:2.39。 */
+private fun enterPip(activity: Activity, state: PlayerUiState) {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) return
+    val ratio = if (state.videoWidth > 0 && state.videoHeight > 0) {
+        val r = android.util.Rational(state.videoWidth, state.videoHeight)
+        when {
+            r.toFloat() > 2.39f -> android.util.Rational(239, 100)
+            r.toFloat() < 1f / 2.39f -> android.util.Rational(100, 239)
+            else -> r
+        }
+    } else {
+        android.util.Rational(16, 9)
+    }
+    runCatching {
+        val ok = activity.enterPictureInPictureMode(
+            android.app.PictureInPictureParams.Builder().setAspectRatio(ratio).build()
+        )
+        android.util.Log.d("LimePip", "enterPictureInPictureMode ratio=${ratio.numerator}/${ratio.denominator} → $ok")
+    }.onFailure { android.util.Log.w("LimePip", "enterPip 失败", it) }
 }
 
 private fun currentBrightness(activity: Activity?): Float {

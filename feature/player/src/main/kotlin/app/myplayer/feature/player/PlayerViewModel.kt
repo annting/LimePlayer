@@ -35,6 +35,8 @@ data class PlayerUiState(
     val durationMs: Long = 0L,
     val bufferedMs: Long = 0L,
     val speed: Float = 1f,
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
     val controlsVisible: Boolean = true,
     val locked: Boolean = false,
     val scrubbing: Boolean = false,
@@ -84,6 +86,8 @@ class PlayerViewModel(
                         durationMs = es.durationMs,
                         bufferedMs = es.bufferedMs,
                         speed = es.speed,
+                        videoWidth = es.videoWidth,
+                        videoHeight = es.videoHeight,
                         error = es.error,
                     )
                 }
