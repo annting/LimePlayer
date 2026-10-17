@@ -287,4 +287,62 @@ class PlayerViewModelTest {
         runCurrent()
         assertThat(vm.ui.value.status).isEqualTo(EngineStatus.ENDED)
     }
+
+    @Test
+    fun `切后台暂停 回前台恢复（先解锁）`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true))
+        runCurrent()
+
+        // 切后台（默认设置）：立即暂停
+        vm.onAppBackgrounded(keepBackgroundPlayback = false)
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isFalse()
+
+        // 恢复播放（应用已解锁）
+        vm.resumeFromBackground()
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isTrue()
+
+        // 幂等：未因后台暂停过时恢复是 no-op
+        vm.resumeFromBackground()
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isTrue()
+    }
+
+    @Test
+    fun `保持后台播放开启时切后台不暂停`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true))
+        runCurrent()
+
+        vm.onAppBackgrounded(keepBackgroundPlayback = true)
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isTrue()   // 前台服务承载，不暂停
+
+        // 此时恢复调用是 no-op（没有后台暂停标记）
+        vm.resumeFromBackground()
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isTrue()
+    }
+
+    @Test
+    fun `未播放时切后台不设恢复标记`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = false))
+        runCurrent()
+
+        vm.onAppBackgrounded(keepBackgroundPlayback = false)
+        runCurrent()
+        vm.resumeFromBackground()
+        runCurrent()
+        // 未在播放中 → 不标记 → 恢复 no-op（playCalls 不变）
+        assertThat(engine.playCalls).isEqualTo(1)   // 仅 start() 里的那次
+    }
 }

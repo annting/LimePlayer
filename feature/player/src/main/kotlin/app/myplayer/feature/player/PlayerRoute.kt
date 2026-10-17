@@ -19,6 +19,8 @@ fun PlayerRoute(
     caps: ClientCapabilities,
     engine: app.myplayer.core.playback.PlaybackEngine,
     onBack: () -> Unit,
+    appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    keepBackgroundPlayback: Boolean = false,
 ) {
     val vm: PlayerViewModel = viewModel(
         factory = viewModelFactory {
@@ -30,5 +32,10 @@ fun PlayerRoute(
     LaunchedEffect(itemId, source) {
         vm.start(itemId, source, caps)
     }
-    PlayerScreen(vm = vm, onBack = onBack)
+    PlayerScreen(
+        vm = vm,
+        onBack = onBack,
+        appUnlocked = appUnlocked,
+        keepBackgroundPlayback = keepBackgroundPlayback,
+    )
 }

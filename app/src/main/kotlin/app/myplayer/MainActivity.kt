@@ -122,14 +122,19 @@ class MainActivity : ComponentActivity() {
 
         // 设置尚未加载完（settings == null）时按「锁着」处理：宁可多解一次，也不要漏锁一帧
         val needsLock = settings?.appLockEnabled != false && !unlocked
-        if (needsLock) {
-            PatternLockScreen(lockState, lockVm::onPointTouched, lockVm::onDrawEnd)
-        } else {
-            val activeConfig = servers.firstOrNull()
-            // 无服务器 → null（落引导页）；有配置但令牌缺失 → 工厂返回 null，同样落引导页等重新登录
-            val source: MediaSource? = remember(activeConfig) { activeConfig?.let(sourceFactory::create) }
-            val showWelcome = activeConfig == null || source == null
 
+        // 应用锁状态流（任务 2-5）：播放页据此「先解锁、再恢复播放」
+        val unlockedFlow = remember { kotlinx.coroutines.flow.MutableStateFlow(false) }
+        androidx.compose.runtime.SideEffect { unlockedFlow.value = !needsLock }
+
+        // 锁屏**覆盖**在内容上而非替换内容（`02` §6.7）：NavHost 常驻，
+        // 否则回前台重新上锁会把导航栈卸载重建 → 丢失播放页（回到起始页）。
+        // 解锁前设置可能未加载，NavHost 先按无服务器渲染，被锁屏挡住即可。
+        val activeConfig = servers.firstOrNull()
+        val source: MediaSource? = remember(activeConfig) { activeConfig?.let(sourceFactory::create) }
+        val showWelcome = activeConfig == null || source == null
+
+        Box(Modifier.fillMaxSize()) {
             AppNavHost(
                 repository = libraryRepository,
                 serverConfigStore = serverConfigStore,
@@ -137,9 +142,14 @@ class MainActivity : ComponentActivity() {
                 client = client,
                 clientCapabilities = clientCapabilities,
                 engineHolder = engineHolder,
+                appUnlocked = unlockedFlow,
+                keepBackgroundPlayback = settings?.keepBackgroundPlayback ?: false,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
             )
+            if (needsLock) {
+                PatternLockScreen(lockState, lockVm::onPointTouched, lockVm::onDrawEnd)
+            }
         }
     }
 }

@@ -127,6 +127,35 @@ class PlayerViewModel(
         notifyInteraction()
     }
 
+    // ---- 切后台自动暂停（`02` §6.7 / 任务 2-5）----
+
+    /** 因切后台而暂停的标记：回前台且应用已解锁时恢复。 */
+    private var pausedByBackground = false
+
+    /**
+     * 切到后台（锁屏 / 切走 / 最近任务，生命周期 ON_STOP）：默认**立即暂停**。
+     * [keepBackgroundPlayback] 为「保持后台播放」设置项（默认关）—— 开启时由前台服务承载，跳过暂停。
+     * 画中画不触发 ON_STOP，天然继续播放。
+     */
+    fun onAppBackgrounded(keepBackgroundPlayback: Boolean) {
+        if (keepBackgroundPlayback) return
+        if (_ui.value.isPlaying) {
+            engine.pause()
+            pausedByBackground = true
+        }
+    }
+
+    /**
+     * 恢复播放：**先解锁、再恢复**（调用方须确认应用锁已解除 —— 观察 appUnlocked 流）。
+     * 幂等：未因后台暂停过时 no-op。
+     */
+    fun resumeFromBackground() {
+        if (!pausedByBackground) return
+        pausedByBackground = false
+        engine.play()
+        notifyInteraction()
+    }
+
     /** 双击快进 / 快退（相对当前进度；`03` §5.5 默认 ±10s）。 */
     fun seekBy(deltaMs: Long) {
         if (_ui.value.locked) return

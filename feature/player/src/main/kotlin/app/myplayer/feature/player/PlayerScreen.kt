@@ -37,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,9 +84,32 @@ fun PlayerScreen(
     vm: PlayerViewModel,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
+    keepBackgroundPlayback: Boolean = false,
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     var indicator by remember { mutableStateOf<SystemIndicator?>(null) }
+
+    // 切后台自动暂停（`02` §6.7）：ON_STOP = 锁屏 / 切走 / 最近任务（画中画不停，因为仍可见）
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                vm.onAppBackgrounded(keepBackgroundPlayback)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // 回前台恢复：先解锁、再恢复（应用锁开启时，解锁完成才触发；幂等）
+    if (appUnlocked != null) {
+        LaunchedEffect(Unit) {
+            appUnlocked.collect { unlocked ->
+                if (unlocked) vm.resumeFromBackground()
+            }
+        }
+    }
 
     Box(modifier.fillMaxSize().background(Color.Black)) {
         VideoSurface(sink = vm::attachVideoSurface)
