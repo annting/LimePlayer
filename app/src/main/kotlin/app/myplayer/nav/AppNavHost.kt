@@ -61,6 +61,7 @@ fun AppNavHost(
     tokenStore: TokenStore,
     client: OkHttpClient,
     clientCapabilities: ClientCapabilities,
+    engineHolder: app.myplayer.playback.PlaybackEngineHolder,
     serverId: String?,
     source: MediaSource?,
 ) {
@@ -163,8 +164,11 @@ fun AppNavHost(
                     itemId = itemId,
                     source = src,
                     caps = clientCapabilities,
+                    engine = engineHolder.engine,
                     onBack = { nav.popBackStack() },
                 )
+                // 挂载即连接媒体会话：启动 PlaybackService，通知栏/锁屏控制才存在
+                app.myplayer.playback.BindMediaSessionEffect()
             } else {
                 // 源未就绪（正常流程到不了）：不做空页，直接退回
                 LaunchedEffect(Unit) { nav.popBackStack() }

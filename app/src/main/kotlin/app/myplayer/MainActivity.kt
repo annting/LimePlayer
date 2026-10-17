@@ -45,6 +45,32 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var sourceFactory: SourceFactory
     @Inject lateinit var client: OkHttpClient
     @Inject lateinit var clientCapabilities: ClientCapabilities
+    @Inject lateinit var engineHolder: app.myplayer.playback.PlaybackEngineHolder
+
+    /**
+     * 回桌面 / 切应用时若正在播放 → 自动进画中画（任务 2-4）。
+     * 宽高比先固定 16:9；等 [app.myplayer.core.playback.EngineState.videoWidth] 接入 UI 后按视频实际比例。
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val es = engineHolder.engine.state.value
+        if (es.isPlaying && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val ratio = if (es.videoWidth > 0 && es.videoHeight > 0) {
+                android.util.Rational(es.videoWidth, es.videoHeight).apply {
+                    // PiP 限制 2.39:1 ～ 1:2.39，越界时收敛
+                    if (toFloat() > 2.39f) android.util.Rational(239, 100)
+                    else if (toFloat() < 1f / 2.39f) android.util.Rational(100, 239)
+                    else this
+                }
+            } else {
+                android.util.Rational(16, 9)
+            }
+            val params = android.app.PictureInPictureParams.Builder()
+                .setAspectRatio(ratio)
+                .build()
+            enterPictureInPictureMode(params)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,6 +136,7 @@ class MainActivity : ComponentActivity() {
                 tokenStore = tokenStore,
                 client = client,
                 clientCapabilities = clientCapabilities,
+                engineHolder = engineHolder,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
             )

@@ -54,6 +54,13 @@ interface PlaybackEngine {
      */
     fun setVideoSurface(surface: android.view.Surface?)
 
+    /**
+     * 结束当前播放会话（退出播放页）：停止播放并清空媒体，但**不释放引擎**。
+     * 与 [release] 的区别：引擎实例可能被前台服务（媒体会话）长期持有，
+     * 退出页面只是「换片/收摊」，不是「销毁」。
+     */
+    fun stopSession() {}
+
     /** 释放全部资源。幂等（重复调用安全）。释放后不应再调用其它方法。 */
     fun release()
 }

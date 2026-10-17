@@ -50,12 +50,16 @@ dependencies {
     implementation(project(":core:network"))
     implementation(project(":core:security"))
     implementation(project(":core:designsystem"))
+    implementation(project(":core:playback"))
     implementation(project(":source:httpapi"))
     implementation(project(":source:emby"))
     implementation(project(":feature:library"))
     implementation(project(":feature:lock"))
     implementation(project(":feature:player"))
     implementation(project(":feature:server"))
+
+    // 媒体会话（任务 2-4）：通知栏 / 锁屏控制的 MediaSessionService
+    implementation(libs.androidx.media3.session)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

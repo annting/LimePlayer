@@ -4,6 +4,11 @@
     <!-- 访问自建媒体服务器（Emby / 飞牛影视）所必需 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- 媒体前台服务（任务 2-4）：通知栏控制 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!--
       M1 骨架阶段说明（docs/02-技术规范.md §8）：
       · 明文 HTTP 默认**不开**（release 保持安全默认）。
@@ -24,12 +29,26 @@
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.LimePlayer">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          媒体会话前台服务（任务 2-4）：把引擎的播放器包装成 MediaSession，
+          由 Media3 框架生成媒体样式通知栏；与 Activity 同进程共享引擎单例。
+        -->
+        <service
+            android:name=".playback.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

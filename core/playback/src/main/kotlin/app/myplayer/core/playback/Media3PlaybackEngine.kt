@@ -48,6 +48,20 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
         .setHandleAudioBecomingNoisy(true)   // 耳机拔出自动暂停
         .build()
 
+    init {
+        // 音频焦点（`02` §6.4 / 任务 2-4）：请求 MEDIA 焦点，来电 / 其它应用抢焦点时自动暂停恢复
+        player.setAudioAttributes(
+            androidx.media3.common.AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            /* handleAudioFocus = */ true,
+        )
+    }
+
+    /** 系统播放器实例 —— 供媒体会话（通知栏 / 锁屏控制）包装。 */
+    val platformPlayer: Player get() = player
+
     private val _state = MutableStateFlow(EngineState())
     override val state: StateFlow<EngineState> = _state.asStateFlow()
 
@@ -144,6 +158,13 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
 
     override fun setVideoSurface(surface: android.view.Surface?) {
         if (!released) player.setVideoSurface(surface)
+    }
+
+    override fun stopSession() {
+        if (released) return
+        player.stop()
+        player.clearMediaItems()
+        _state.update { EngineState() }   // 会话结束：清空上一次的 error / tracks / position
     }
 
     override fun release() {

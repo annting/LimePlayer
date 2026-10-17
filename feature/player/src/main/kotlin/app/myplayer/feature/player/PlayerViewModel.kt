@@ -197,7 +197,8 @@ class PlayerViewModel(
                 }
             }
         }
-        engine.release()
+        // 引擎是进程级单例（前台服务持有）：只结束会话，不 release
+        engine.stopSession()
     }
 
     private fun scheduleAutoHide() {
