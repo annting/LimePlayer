@@ -195,6 +195,37 @@ private fun NoServerScreen(onAddServer: () -> Unit) {
     }
 }
 
+/** 搜索 tab：本地索引 + 输入即搜（任务 3-5 / 3-6）。 */
+@Composable
+internal fun SearchDestination(
+    repository: LibraryRepository,
+    source: MediaSource?,
+    serverId: String,
+    onPlay: (String) -> Unit,
+) {
+    val pinyin = remember { app.myplayer.feature.library.IcuPinyinConverter() }
+    val vm: app.myplayer.feature.library.LibrarySearchViewModel = viewModel(
+        key = "search-$serverId",
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                app.myplayer.feature.library.LibrarySearchViewModel(repository, serverId, pinyin) as T
+        },
+    )
+    val state by vm.state.collectAsStateWithLifecycle()
+    app.myplayer.feature.library.SearchScreen(
+        state = state,
+        onQueryChange = vm::onQueryChange,
+        onSubmit = { vm.rememberQuery() },
+        onSelectRecent = vm::selectRecent,
+        onClear = vm::clearQuery,
+        loadImage = { item ->
+            source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM) ?: ImageSource.None
+        },
+        onPlay = { item -> onPlay(item.id) },
+    )
+}
+
 /** 媒体库 tab：库页（库 Tab + 海报网格）。ViewModel 以 serverId 为 key 持久，切换 tab 不丢状态。 */
 @Composable
 internal fun LibraryDestination(

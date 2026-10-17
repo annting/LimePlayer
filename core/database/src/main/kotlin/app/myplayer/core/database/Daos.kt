@@ -20,6 +20,9 @@ interface LibraryDao {
 interface MediaItemDao {
     @Upsert suspend fun upsertAll(rows: List<MediaItemEntity>)
 
+    @Query("SELECT * FROM media_items WHERE serverId = :serverId ORDER BY title")
+    fun observeAll(serverId: String): Flow<List<MediaItemEntity>>
+
     @Query("SELECT * FROM media_items WHERE serverId = :serverId AND libraryId = :libraryId ORDER BY sortTitle")
     fun observeLibrary(serverId: String, libraryId: String): Flow<List<MediaItemEntity>>
 

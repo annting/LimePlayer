@@ -145,7 +145,7 @@ private fun rememberImageSource(itemId: String, load: suspend () -> ImageSource)
 
 /** 海报卡（设计板 `.poster`）：2:3 圆角、底部 scrim、评分角标、标题 + 单行元信息；按压缩放 0.96。 */
 @Composable
-private fun PosterCard(
+internal fun PosterCard(
     item: MediaItemDto,
     loadImage: suspend (MediaItemDto) -> ImageSource,
     onPlay: (MediaItemDto) -> Unit,

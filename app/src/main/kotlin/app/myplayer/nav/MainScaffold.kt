@@ -62,9 +62,11 @@ fun MainScaffold(
                     serverId = serverId,
                     onPlay = onPlay,
                 )
-                MainTab.SEARCH -> MainPlaceholder(
-                    title = "搜索",
-                    description = "中文 / 拼音 / 首字母搜索将在 M3 上线。",
+                MainTab.SEARCH -> SearchDestination(
+                    repository = repository,
+                    source = source,
+                    serverId = serverId,
+                    onPlay = onPlay,
                 )
                 MainTab.SETTINGS -> MainPlaceholder(
                     title = "设置",

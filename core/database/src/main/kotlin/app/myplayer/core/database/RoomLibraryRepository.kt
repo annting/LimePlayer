@@ -16,6 +16,9 @@ class RoomLibraryRepository(private val db: MediaDatabase) : LibraryRepository {
     override fun observeItems(serverId: String, libraryId: String): Flow<List<MediaItemDto>> =
         db.mediaItemDao().observeLibrary(serverId, libraryId).map { rows -> rows.map { it.toDto() } }
 
+    override fun observeAllItems(serverId: String): Flow<List<MediaItemDto>> =
+        db.mediaItemDao().observeAll(serverId).map { rows -> rows.map { it.toDto() } }
+
     override suspend fun syncLibraries(source: MediaSource) {
         val libs = source.getLibraries()
         db.libraryDao().upsertAll(libs.map { it.toEntity(source.serverId) })

@@ -52,6 +52,9 @@ data class AdjacentEpisodes(
 interface LibraryRepository {
     fun observeLibraries(serverId: String): Flow<List<MediaLibrary>>
     fun observeItems(serverId: String, libraryId: String): Flow<List<MediaItemDto>>
+
+    /** 该服务器下全部库的条目（搜索索引用）。默认空 —— 老实现无需改动。 */
+    fun observeAllItems(serverId: String): Flow<List<MediaItemDto>> = kotlinx.coroutines.flow.flowOf(emptyList())
     suspend fun syncLibraries(source: MediaSource)
     suspend fun syncItems(source: MediaSource, libraryId: String)
 }
