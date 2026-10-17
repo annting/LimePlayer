@@ -143,6 +143,7 @@ class MainActivity : ComponentActivity() {
                 engineHolder = engineHolder,
                 appUnlocked = unlockedFlow,
                 keepBackgroundPlayback = settings?.keepBackgroundPlayback ?: false,
+                autoPlayNext = settings?.autoPlayNext ?: true,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
             )

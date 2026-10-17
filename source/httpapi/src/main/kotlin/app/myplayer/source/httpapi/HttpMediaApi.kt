@@ -114,6 +114,23 @@ class HttpMediaApi(
                 .applyAuth().build()
         )
 
+    /** 某剧集下的全部集（连播取相邻集用）。 */
+    suspend fun getEpisodes(seriesId: String, userId: String): List<BaseItemDto> =
+        execute<ItemsResponseDto>(
+            Request.Builder()
+                .url(
+                    url(
+                        "/Shows/$seriesId/Episodes",
+                        mapOf(
+                            "UserId" to userId,
+                            "Fields" to "MediaSources,UserData,Genres",
+                            "EnableImages" to "false",
+                        ),
+                    )
+                )
+                .applyAuth().build()
+        ).items
+
     /** 图片 URL **不带令牌**；鉴权走 [authHeaders]，由 Coil 的请求头注入。 */
     fun imageUrl(itemId: String, kind: String, maxWidth: Int): String =
         url("/Items/$itemId/Images/$kind", mapOf("maxWidth" to maxWidth.toString())).toString()

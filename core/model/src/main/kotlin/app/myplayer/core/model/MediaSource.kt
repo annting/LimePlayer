@@ -26,7 +26,24 @@ interface MediaSource {
     suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan
     suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec?
     suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState)
+
+    /**
+     * 直放失败时的**强制转码**重试（`03` §5.8 降级链）。
+     * 返回 null 表示该源不支持（UI 直接进错误卡片）。默认不支持 —— 老实现无需改动。
+     */
+    suspend fun planTranscode(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan? = null
+
+    /**
+     * 同季相邻集（`03` §5.7 连播用）。默认无相邻集 —— 电影 / 非剧集内容天然返回空。
+     */
+    suspend fun getAdjacentEpisodes(item: MediaItemDto): AdjacentEpisodes = AdjacentEpisodes()
 }
+
+/** 同季相邻集（连播数据源）；不存在的方向为 null。 */
+data class AdjacentEpisodes(
+    val previous: MediaItemDto? = null,
+    val next: MediaItemDto? = null,
+)
 
 /** 本地缓存读写门面：UI 只观察它，同步由 `sync*` 触发。 */
 interface LibraryRepository {

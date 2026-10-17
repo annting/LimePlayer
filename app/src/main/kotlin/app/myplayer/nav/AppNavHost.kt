@@ -64,6 +64,7 @@ fun AppNavHost(
     engineHolder: app.myplayer.playback.PlaybackEngineHolder,
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>,
     keepBackgroundPlayback: Boolean,
+    autoPlayNext: Boolean,
     serverId: String?,
     source: MediaSource?,
 ) {
@@ -170,6 +171,7 @@ fun AppNavHost(
                     onBack = { nav.popBackStack() },
                     appUnlocked = appUnlocked,
                     keepBackgroundPlayback = keepBackgroundPlayback,
+                    autoPlayNext = autoPlayNext,
                 )
                 // 挂载即连接媒体会话：启动 PlaybackService，通知栏/锁屏控制才存在
                 app.myplayer.playback.BindMediaSessionEffect()

@@ -2,11 +2,14 @@ package app.myplayer.feature.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.myplayer.core.model.AdjacentEpisodes
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.PlayState
+import app.myplayer.core.model.PlaybackPlan
 import app.myplayer.core.playback.EngineError
+import app.myplayer.core.playback.EngineState
 import app.myplayer.core.playback.EngineStatus
 import app.myplayer.core.playback.PlaybackEngine
 import app.myplayer.core.playback.ProgressReporter
@@ -46,6 +49,15 @@ data class PlayerUiState(
     val scrubbing: Boolean = false,
     val scrubPositionMs: Long = 0L,
     val error: EngineError? = null,
+    /** 连播浮层（`03` §5.7：90% 出现「下一集 + 10s 倒计时」）。 */
+    val nextUpVisible: Boolean = false,
+    val nextUpCountdown: Int = 0,
+    /** 顶部降级提示（直放失败切换转码时短暂显示）。 */
+    val fallbackNotice: String? = null,
+    /** 播完且没有下一集：路由据此回列表。 */
+    val finished: Boolean = false,
+    /** 连播浮层里要显示的下一集（null = 没有下一集）。 */
+    val nextEpisode: MediaItemDto? = null,
 ) {
     /** 进度条应显示的位置：拖动中显示预览位置（commit-on-release，`03` §5.4）。 */
     val displayPositionMs: Long get() = if (scrubbing) scrubPositionMs else positionMs
@@ -93,6 +105,16 @@ class PlayerViewModel(
     /** 会话上下文快照：供 onCleared 在 viewModelScope 取消后补报 STOPPED。 */
     private var sessionSource: MediaSource? = null
     private var sessionItem: MediaItemDto? = null
+    private var sessionCaps: ClientCapabilities? = null
+
+    // ---- 2-7 连播与降级 ----
+    /** 同季相邻集（连播数据源）。 */
+    private var adjacent: AdjacentEpisodes = AdjacentEpisodes()
+    private var currentPlan: PlaybackPlan? = null
+    /** 直放已降级过一次转码（避免错误风暴里反复重试）。 */
+    private var transcodeRetried = false
+    private var nextUpJob: Job? = null
+    private var autoPlayNextEnabled = true
 
     init {
         viewModelScope.launch {
@@ -111,20 +133,51 @@ class PlayerViewModel(
                         error = es.error,
                     )
                 }
+                onEngineState(es)
             }
         }
     }
 
+    /** 状态驱动的连播 / 结束 / 降级判定（`03` §5.7–§5.8）。 */
+    private fun onEngineState(es: EngineState) {
+        if (es.error != null) {
+            maybeFallbackToTranscode()
+            return
+        }
+        val dur = es.durationMs
+        val next = adjacent.next
+        if (dur > 0 && es.status == EngineStatus.READY && !_ui.value.nextUpVisible &&
+            next != null && es.positionMs >= dur * NEXT_UP_THRESHOLD_PERCENT / 100
+        ) {
+            if (autoPlayNextEnabled) startNextUpCountdown() else showNextUpStatic()
+        }
+        if (es.status == EngineStatus.ENDED) {
+            if (next != null && autoPlayNextEnabled) startNext(next)
+            else _ui.update { it.copy(finished = true) }
+        }
+    }
+
     /** 装载并开始播放。[itemId] 来自库页点击；同一 item 重复调用幂等（重组安全）。 */
-    fun start(itemId: String, source: MediaSource, caps: ClientCapabilities) {
+    fun start(
+        itemId: String,
+        source: MediaSource,
+        caps: ClientCapabilities,
+        autoPlayNext: Boolean = true,
+    ) {
         if (startedItemId == itemId) return
         startedItemId = itemId
+        sessionCaps = caps
+        autoPlayNextEnabled = autoPlayNext
         viewModelScope.launch {
             val item = source.getItemDetail(itemId)
-            _ui.update { it.copy(item = item) }
+            _ui.update { it.copy(item = item, nextUpVisible = false, nextUpCountdown = 0, finished = false) }
             val plan = source.planPlayback(item, caps)
+            currentPlan = plan
+            transcodeRetried = false
             engine.prepare(plan, item.userData.resumePositionTicks.millis)
             engine.play()
+            // 相邻集异步加载（不阻塞起播；网络失败就等于没有连播）
+            adjacent = runCatching { source.getAdjacentEpisodes(item) }.getOrElse { AdjacentEpisodes() }
             scheduleAutoHide()
             // 启动进度上报（开始 / 每 10s / 暂停 / 结束，随 ViewModel 生命周期）
             sessionSource = source
@@ -258,6 +311,107 @@ class PlayerViewModel(
         notifyInteraction()
     }
 
+    // ---- 连播（`03` §5.7）----
+
+    /** 90% 起倒计时自动连播。 */
+    private fun startNextUpCountdown() {
+        _ui.update {
+            it.copy(
+                nextUpVisible = true,
+                nextUpCountdown = NEXT_UP_COUNTDOWN_SECONDS,
+                nextEpisode = adjacent.next,
+            )
+        }
+        nextUpJob?.cancel()
+        nextUpJob = viewModelScope.launch {
+            var left = NEXT_UP_COUNTDOWN_SECONDS
+            while (left > 0) {
+                delay(1_000)
+                left--
+                _ui.update { it.copy(nextUpCountdown = left) }
+            }
+            adjacent.next?.let { startNext(it) }
+        }
+    }
+
+    /** 关闭「自动连播」时只显示浮层，不倒计时。 */
+    private fun showNextUpStatic() {
+        _ui.update { it.copy(nextUpVisible = true, nextUpCountdown = 0, nextEpisode = adjacent.next) }
+    }
+
+    /** 用户取消连播浮层（继续看当前集）。 */
+    fun cancelNextUp() {
+        nextUpJob?.cancel()
+        _ui.update { it.copy(nextUpVisible = false, nextUpCountdown = 0) }
+    }
+
+    fun playNext() {
+        adjacent.next?.let { startNext(it) }
+    }
+
+    fun playPrevious() {
+        adjacent.previous?.let { startNext(it) }
+    }
+
+    fun hasPreviousEpisode(): Boolean = adjacent.previous != null
+
+    private fun startNext(next: MediaItemDto) {
+        val src = sessionSource ?: return
+        val caps = sessionCaps ?: return
+        nextUpJob?.cancel()
+        _ui.update { it.copy(nextUpVisible = false, nextUpCountdown = 0) }
+        startedItemId = null            // 允许同 VM 换集重载
+        start(next.id, src, caps, autoPlayNextEnabled)
+    }
+
+    // ---- 降级与重试（`03` §5.8）----
+
+    /**
+     * 直放失败 → 自动切转码（顶部提示一次）；非直放失败或已降级过 → 保持错误卡片。
+     * 转码也失败时错误卡片带「重试」。
+     */
+    private fun maybeFallbackToTranscode() {
+        if (transcodeRetried || currentPlan !is PlaybackPlan.Direct) return
+        val src = sessionSource ?: return
+        val item = sessionItem ?: return
+        val caps = sessionCaps ?: return
+        transcodeRetried = true
+        _ui.update { it.copy(fallbackNotice = "直放失败，正在切换转码…") }
+        viewModelScope.launch {
+            runCatching { src.planTranscode(item, caps) }
+                .onSuccess { plan ->
+                    if (plan == null) {
+                        _ui.update { it.copy(fallbackNotice = null, error = EngineError(-1, "该源不支持转码降级")) }
+                        return@onSuccess
+                    }
+                    currentPlan = plan
+                    engine.prepare(plan, _ui.value.positionMs)
+                    engine.play()
+                    delay(2_500)
+                    _ui.update { it.copy(fallbackNotice = null) }
+                }
+                .onFailure { e ->
+                    _ui.update {
+                        it.copy(
+                            fallbackNotice = null,
+                            error = EngineError(-1, "转码协商失败：${e.message ?: "未知错误"}"),
+                        )
+                    }
+                }
+        }
+    }
+
+    /** 错误卡片「重试」：清掉本次会话标记并从断点重新起播。 */
+    fun retry() {
+        val src = sessionSource ?: return
+        val caps = sessionCaps ?: return
+        val item = sessionItem ?: return
+        _ui.update { it.copy(error = null, fallbackNotice = null, finished = false) }
+        transcodeRetried = false
+        startedItemId = null
+        start(item.id, src, caps, autoPlayNextEnabled)
+    }
+
     /** 视频输出面绑定：SurfaceView 的生命周期回调经此透传给引擎。 */
     fun attachVideoSurface(surface: android.view.Surface?) = engine.setVideoSurface(surface)
 
@@ -289,5 +443,8 @@ class PlayerViewModel(
 
     private companion object {
         const val CONTROLS_AUTO_HIDE_MS = 3_000L
+        /** 连播浮层出现阈值（`03` §5.7：播至 90%）。 */
+        const val NEXT_UP_THRESHOLD_PERCENT = 90
+        const val NEXT_UP_COUNTDOWN_SECONDS = 10
     }
 }

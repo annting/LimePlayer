@@ -29,6 +29,8 @@ data class MediaItemDto(
     val sourceType: SourceType,
     val title: String,
     val seriesName: String? = null,
+    /** 所属剧集 id（连播取相邻集用；电影 / 单集视频为 null）。 */
+    val seriesId: String? = null,
     val seasonNumber: Int? = null,
     val episodeNumber: Int? = null,
     /** 100ns tick；单位口径见 [Ticks]。 */

@@ -11,7 +11,7 @@ class EmbyMapper(private val serverId: String) {
         val src = dto.mediaSources?.firstOrNull()
         return MediaItemDto(
             id = dto.id, serverId = serverId, sourceType = SourceType.EMBY,
-            title = dto.name ?: "", seriesName = dto.seriesName,
+            title = dto.name ?: "", seriesName = dto.seriesName, seriesId = dto.seriesId,
             seasonNumber = dto.parentIndexNumber, episodeNumber = dto.indexNumber,
             durationTicks = Ticks(dto.runTimeTicks ?: 0L),        // Long(tick) → Ticks
             sizeBytes = src?.size, bitrate = src?.bitrate, width = src?.width, height = src?.height,

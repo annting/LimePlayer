@@ -2,6 +2,7 @@
 
 package app.myplayer.feature.player
 
+import app.myplayer.core.model.AdjacentEpisodes
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSize
@@ -102,16 +103,23 @@ class PlayerViewModelTest {
     private class FakeSource(
         private val detail: MediaItemDto,
         private val plan: PlaybackPlan,
+        private val next: MediaItemDto? = null,
+        private val transcodePlan: PlaybackPlan? = null,
     ) : MediaSource {
         override val type = SourceType.EMBY
         override val serverId = "srv"
 
         override suspend fun getLibraries(): List<MediaLibrary> = error("unused")
         override suspend fun getItems(query: ItemQuery): PagedResult<MediaItemDto> = error("unused")
-        override suspend fun getItemDetail(id: String): MediaItemDto = detail
+        override suspend fun getItemDetail(id: String): MediaItemDto =
+            if (next != null && id == next.id) next else detail
         override suspend fun image(item: MediaItemDto, kind: ImageKind, size: ImageSize): ImageSource = error("unused")
         override suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan = plan
         override suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec? = null
+
+        override suspend fun getAdjacentEpisodes(item: MediaItemDto) = AdjacentEpisodes(next = next)
+
+        override suspend fun planTranscode(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan? = transcodePlan
         override suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState) = Unit
     }
 
@@ -382,6 +390,88 @@ class PlayerViewModelTest {
 
         vm.setScaleMode(ScaleMode.CROP)
         assertThat(vm.ui.value.scaleMode).isEqualTo(ScaleMode.CROP)
+    }
+
+    // ---- 2-7 连播与降级 ----
+
+    @Test
+    fun `播到 90% 出现连播浮层并倒计时`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val next = item().copy(id = "i2", title = "第二集")
+        val vm = vm(engine, FakeSource(item(), plan, next = next))
+        runCurrent()
+
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true, durationMs = 100_000, positionMs = 89_000))
+        runCurrent()
+        assertThat(vm.ui.value.nextUpVisible).isFalse()   // 未到 90%
+
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true, durationMs = 100_000, positionMs = 91_000))
+        runCurrent()
+        assertThat(vm.ui.value.nextUpVisible).isTrue()
+        assertThat(vm.ui.value.nextUpCountdown).isEqualTo(10)
+        assertThat(vm.ui.value.nextEpisode?.id).isEqualTo("i2")
+    }
+
+    @Test
+    fun `倒计时结束自动播下一集`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val next = item().copy(id = "i2", title = "第二集")
+        val vm = vm(engine, FakeSource(item(), plan, next = next))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true, durationMs = 100_000, positionMs = 91_000))
+        runCurrent()
+        assertThat(vm.ui.value.nextUpVisible).isTrue()
+
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertThat(vm.ui.value.item?.id).isEqualTo("i2")   // 已切到下一集
+        assertThat(vm.ui.value.nextUpVisible).isFalse()
+    }
+
+    @Test
+    fun `取消连播后不再自动切换`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val next = item().copy(id = "i2", title = "第二集")
+        val vm = vm(engine, FakeSource(item(), plan, next = next))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true, durationMs = 100_000, positionMs = 91_000))
+        runCurrent()
+        vm.cancelNextUp()
+        assertThat(vm.ui.value.nextUpVisible).isFalse()
+
+        advanceTimeBy(15_000)
+        runCurrent()
+        assertThat(vm.ui.value.item?.id).isEqualTo("i1")   // 仍在本集
+    }
+
+    @Test
+    fun `直放失败自动降级转码`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val direct = PlaybackPlan.Direct(uri = "http://x/direct", mediaSourceId = "m1")
+        val transcode = PlaybackPlan.Transcode(hlsUrl = "http://x/transcode", isRemuxOnly = false)
+        val src = FakeSource(item(), direct, transcodePlan = transcode)
+        val vm = PlayerViewModel(engine, reporterFactory = null).also { it.start("i1", src, caps) }
+        runCurrent()
+        assertThat(engine.preparedPlan).isEqualTo(direct)
+
+        engine.emit(EngineState(status = EngineStatus.FAILED, error = app.myplayer.core.playback.EngineError(2001, "source error")))
+        runCurrent()
+        assertThat(vm.ui.value.fallbackNotice).isNotNull()          // 「直放失败，正在切换转码…」
+        assertThat(engine.preparedPlan).isEqualTo(transcode)        // 已按转码重装
+    }
+
+    @Test
+    fun `重试清空错误并重新装载`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.FAILED, error = app.myplayer.core.playback.EngineError(2001, "x")))
+        runCurrent()
+        assertThat(vm.ui.value.error).isNotNull()
+
+        vm.retry()
+        runCurrent()
+        assertThat(vm.ui.value.error).isNull()
     }
 
     @Test

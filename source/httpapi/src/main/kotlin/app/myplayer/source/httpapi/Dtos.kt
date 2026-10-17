@@ -27,6 +27,8 @@ data class BaseItemDto(
     @SerialName("Id") val id: String,
     @SerialName("Name") val name: String? = null,
     @SerialName("SeriesName") val seriesName: String? = null,
+    /** 所属剧集 id（连播取相邻集用）。 */
+    @SerialName("SeriesId") val seriesId: String? = null,
     @SerialName("IndexNumber") val indexNumber: Int? = null,
     @SerialName("ParentIndexNumber") val parentIndexNumber: Int? = null,
     @SerialName("RunTimeTicks") val runTimeTicks: Long? = null,

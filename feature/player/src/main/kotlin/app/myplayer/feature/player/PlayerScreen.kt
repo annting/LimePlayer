@@ -209,11 +209,44 @@ fun PlayerScreen(
             }
         }
 
-        // 错误卡片（完整降级交互见任务 2-7）
+        // 直放降级提示（`03` §5.8：顶部小卡片，自动消失）
+        state.fallbackNotice?.let { notice ->
+            Row(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
+                    .padding(top = 10.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(notice, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        // 连播浮层（`03` §5.7：90% 出现「下一集 + 10s 倒计时」）
+        if (state.nextUpVisible) {
+            NextUpCard(
+                nextEpisode = state.nextEpisode,
+                countdown = state.nextUpCountdown,
+                hasPrevious = vm.hasPreviousEpisode(),
+                onPlayNext = vm::playNext,
+                onPlayPrevious = vm::playPrevious,
+                onCancel = vm::cancelNextUp,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 16.dp, bottom = 96.dp),
+            )
+        }
+
+        // 错误卡片（`03` §5.8：错误码 + 重试）
         state.error?.let { error ->
             PlaybackErrorOverlay(
                 error = error,
                 onBack = onBack,
+                onRetry = vm::retry,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -510,6 +543,7 @@ private fun PlayerIconButton(
 private fun PlaybackErrorOverlay(
     error: EngineError,
     onBack: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -526,16 +560,108 @@ private fun PlaybackErrorOverlay(
             color = Color.White.copy(alpha = 0.6f),
             style = MonoLabelStyle,
         )
+        error.message?.takeIf { it.isNotBlank() }?.let {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                it,
+                color = Color.White.copy(alpha = 0.55f),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
         Spacer(Modifier.height(14.dp))
+        Row {
+            Text(
+                "重试",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onRetry)
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                "返回",
+                color = Color.White.copy(alpha = 0.75f),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onBack)
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/**
+ * 连播浮层（`03` §5.7）：下一集标题 + 倒计时 + 上一集 / 下一集 / 取消。
+ * 关闭「自动连播」时 [countdown] 为 0，只显示按钮。
+ */
+@Composable
+private fun NextUpCard(
+    nextEpisode: app.myplayer.core.model.MediaItemDto?,
+    countdown: Int,
+    hasPrevious: Boolean,
+    onPlayNext: () -> Unit,
+    onPlayPrevious: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .width(260.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.Black.copy(alpha = 0.84f))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
         Text(
-            "返回",
-            color = MaterialTheme.colorScheme.primary,
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onBack)
-                .padding(horizontal = 18.dp, vertical = 8.dp),
+            if (countdown > 0) "${countdown}s 后播放下一集" else "下一集",
+            color = Color.White.copy(alpha = 0.6f),
+            style = MaterialTheme.typography.labelSmall,
         )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            nextEpisode?.title ?: "下一集",
+            color = Color.White,
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (hasPrevious) {
+                Text(
+                    "上一集",
+                    color = Color.White.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(999.dp))
+                        .clickable(onClick = onPlayPrevious)
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                "播放下一集",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable(onClick = onPlayNext)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "取消",
+                color = Color.White.copy(alpha = 0.6f),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable(onClick = onCancel)
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
     }
 }
 

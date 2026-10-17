@@ -59,7 +59,35 @@ abstract class HttpMediaSource(
      * **前两档都不匹配时不允许默默回退成直连**——那会把服务端明确声明「不支持直放」的
      * 原文件流交给播放器，结果是播放失败且原因难查；连转码地址都拿不到才抛错，由错误态 UI 呈现。
      */
-    override suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan {
+    override suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan =
+        plan(item, caps, forceTranscode = false)
+
+    /** 直放失败降级（`03` §5.8）：强制走转码分支。 */
+    override suspend fun planTranscode(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan =
+        plan(item, caps, forceTranscode = true)
+
+    /** 同季相邻集（连播）：拉本剧集全部集，按 季-集 排序后取前后邻居。 */
+    override suspend fun getAdjacentEpisodes(item: MediaItemDto): AdjacentEpisodes {
+        val seriesId = item.seriesId ?: return AdjacentEpisodes()
+        val userId = api.config.userId ?: return AdjacentEpisodes()
+        return runCatching {
+            val episodes = api.getEpisodes(seriesId, userId)
+                .map { mapItem(it, libraryId = null) }
+                .sortedWith(compareBy({ it.seasonNumber ?: 0 }, { it.episodeNumber ?: 0 }))
+            val idx = episodes.indexOfFirst { it.id == item.id }
+            if (idx < 0) AdjacentEpisodes()
+            else AdjacentEpisodes(
+                previous = episodes.getOrNull(idx - 1),
+                next = episodes.getOrNull(idx + 1),
+            )
+        }.getOrElse { AdjacentEpisodes() }   // 网络失败不阻塞播放
+    }
+
+    private suspend fun plan(
+        item: MediaItemDto,
+        caps: ClientCapabilities,
+        forceTranscode: Boolean,
+    ): PlaybackPlan {
         val userId = requireNotNull(api.config.userId) { "登录后才能播放" }
         val info = api.getPlaybackInfo(item.id, userId, buildDeviceProfile(caps))
         val source = info.mediaSources.firstOrNull()
@@ -68,15 +96,15 @@ abstract class HttpMediaSource(
         val transcodingUrl = source?.transcodingUrl?.takeIf { it.isNotBlank() }?.let(::playbackUrl)
 
         val plan = when {
-            source?.supportsDirectPlay == true ->
+            !forceTranscode && source?.supportsDirectPlay == true ->
                 PlaybackPlan.Direct(
                     uri = api.directStreamUrl(item.id, mediaSourceId, token),
                     mediaSourceId = mediaSourceId,
                 )
             transcodingUrl != null ->
                 PlaybackPlan.Transcode(transcodingUrl, isRemuxOnly = source.supportsDirectStream)
-            source?.supportsTranscoding == true ->
-                // 服务端说支持转码但没回地址：按固定入口自拼 HLS
+            source?.supportsTranscoding == true || forceTranscode ->
+                // 服务端说支持转码但没回地址（或强制降级）：按固定入口自拼 HLS
                 PlaybackPlan.Transcode(
                     playbackUrl("/Videos/${item.id}/master.m3u8?MediaSourceId=$mediaSourceId"),
                     isRemuxOnly = false,

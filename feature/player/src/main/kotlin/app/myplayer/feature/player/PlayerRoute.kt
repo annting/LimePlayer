@@ -2,6 +2,8 @@ package app.myplayer.feature.player
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -21,6 +23,7 @@ fun PlayerRoute(
     onBack: () -> Unit,
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     keepBackgroundPlayback: Boolean = false,
+    autoPlayNext: Boolean = true,
 ) {
     val vm: PlayerViewModel = viewModel(
         factory = viewModelFactory {
@@ -30,7 +33,12 @@ fun PlayerRoute(
         },
     )
     LaunchedEffect(itemId, source) {
-        vm.start(itemId, source, caps)
+        vm.start(itemId, source, caps, autoPlayNext)
+    }
+    // 播完且无下一集 → 回列表（`03` §5.7）
+    val ui by vm.ui.collectAsStateWithLifecycle()
+    LaunchedEffect(ui.finished) {
+        if (ui.finished) onBack()
     }
     PlayerScreen(
         vm = vm,
