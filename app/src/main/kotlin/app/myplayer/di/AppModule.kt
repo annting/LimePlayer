@@ -11,6 +11,8 @@ import app.myplayer.core.datastore.*
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.network.HttpClientFactory
+import app.myplayer.NetworkPolicy
+import app.myplayer.cleartextGuard
 import app.myplayer.core.network.NetworkConfig
 import app.myplayer.core.security.CredentialStorage
 import app.myplayer.core.security.KeystoreSecretCipher
@@ -74,7 +76,9 @@ object AppModule {
         PatternCredentialStore(SecretHasher(), storage)
 
     @Provides @Singleton
-    fun okHttpClient(): OkHttpClient = HttpClientFactory.create(NetworkConfig())
+    fun okHttpClient(policy: NetworkPolicy): OkHttpClient = HttpClientFactory.create(
+        NetworkConfig(extraInterceptors = listOf(cleartextGuard(policy)))
+    )
 
     /** 稳定的设备标识：Emby 用它区分会话，在重装之外保持稳定。 */
     @Provides @Singleton

@@ -58,6 +58,7 @@ fun SettingsScreen(
     onAllowCleartextHttp: (Boolean) -> Unit,
     onTrustSelfSignedCert: (Boolean) -> Unit,
     onLibraryDisplayMode: (LibraryDisplayMode) -> Unit,
+    onAbout: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -166,12 +167,26 @@ fun SettingsScreen(
             )
 
             SectionTitle("关于")
-            Text(
-                "LimePlayer 0.1.0 · 基于 ExoPlayer（Apache-2.0）与 FFmpeg（LGPL-2.1+）构建。" +
-                    "本应用不含 FFmpeg 二进制；许可证全文见项目仓库 LICENSES/。",
-                style = MaterialTheme.typography.labelSmall,
-                color = LocalAppColors.current.text3,
-            )
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .clickable(onClick = onAbout)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("关于 LimePlayer", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "版本 0.1.0 · 开源许可声明",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalAppColors.current.text3,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
+                Text("›", style = MaterialTheme.typography.titleMedium, color = LocalAppColors.current.text3)
+            }
         }
     }
 }

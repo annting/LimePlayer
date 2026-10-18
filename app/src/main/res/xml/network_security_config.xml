@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  主源集（release 也生效，任务 5-4）：放行明文流量 —— 家庭 NAS 场景必须
+  （Emby / 飞牛影视通常是 http://）。运行时开关由 NetworkPolicy 拦截器执行，
+  设置页「网络 → 明文 HTTP」关闭时 http:// 请求会被拒绝。
+  信任锚只含系统证书；用户证书（抓包）仅在 debug 覆盖里放行。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

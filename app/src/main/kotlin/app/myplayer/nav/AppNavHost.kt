@@ -245,7 +245,7 @@ private suspend fun loadPosterWithFallback(
     return remote ?: ImageSource.None
 }
 
-/** 设置 tab：服务器管理 + 全部设置项（`01` §6 / 任务 5-1、5-2）。 */
+/** 设置 tab：服务器管理 + 全部设置项 + 关于（`01` §6 / 任务 5-1 ~ 5-3）。 */
 @Composable
 internal fun SettingsDestination(
     settingsStore: app.myplayer.core.datastore.SettingsStore,
@@ -261,30 +261,46 @@ internal fun SettingsDestination(
         },
     )
     val state by vm.state.collectAsStateWithLifecycle()
-    app.myplayer.feature.settings.SettingsScreen(
-        state = state,
-        onSetActiveServer = vm::setActiveServer,
-        onDeleteServer = vm::deleteServer,
-        onAddServer = onAddServer,      // 复用外层 ADD_SERVER 路由（含探测 + 登录）
-        onThemeMode = vm::setThemeMode,
-        onDefaultSpeed = vm::setDefaultSpeed,
-        onKeepBackgroundPlayback = vm::setKeepBackgroundPlayback,
-        onDoubleTapSeek = vm::setDoubleTapSeekMillis,
-        onAutoPlayNext = vm::setAutoPlayNext,
-        onScreenOrientation = vm::setScreenOrientation,
-        onDefaultAspectRatio = vm::setDefaultAspectRatio,
-        onSubtitleStyle = vm::setSubtitleStyle,
-        onAppLockEnabled = vm::setAppLockEnabled,
-        onUnlockGrace = vm::setUnlockGraceMillis,
-        onHideRecentsSnapshot = vm::setHideRecentsSnapshot,
-        onLocalThumbnails = vm::setLocalThumbnails,
-        onSearchFuzzyPinyin = vm::setSearchFuzzyPinyin,
-        onSearchTraditionalSimplified = vm::setSearchTraditionalSimplified,
-        onAllowCleartextHttp = vm::setAllowCleartextHttp,
-        onTrustSelfSignedCert = vm::setTrustSelfSignedCert,
-        onLibraryDisplayMode = vm::setLibraryDisplayMode,
-        onBack = { /* tab 页无返回 */ },
-    )
+    val subNav = rememberNavController()
+
+    androidx.navigation.compose.NavHost(subNav, startDestination = "list") {
+        composable("list") {
+            app.myplayer.feature.settings.SettingsScreen(
+                state = state,
+                onSetActiveServer = vm::setActiveServer,
+                onDeleteServer = vm::deleteServer,
+                onAddServer = onAddServer,      // 复用外层 ADD_SERVER 路由（含探测 + 登录）
+                onThemeMode = vm::setThemeMode,
+                onDefaultSpeed = vm::setDefaultSpeed,
+                onKeepBackgroundPlayback = vm::setKeepBackgroundPlayback,
+                onDoubleTapSeek = vm::setDoubleTapSeekMillis,
+                onAutoPlayNext = vm::setAutoPlayNext,
+                onScreenOrientation = vm::setScreenOrientation,
+                onDefaultAspectRatio = vm::setDefaultAspectRatio,
+                onSubtitleStyle = vm::setSubtitleStyle,
+                onAppLockEnabled = vm::setAppLockEnabled,
+                onUnlockGrace = vm::setUnlockGraceMillis,
+                onHideRecentsSnapshot = vm::setHideRecentsSnapshot,
+                onLocalThumbnails = vm::setLocalThumbnails,
+                onSearchFuzzyPinyin = vm::setSearchFuzzyPinyin,
+                onSearchTraditionalSimplified = vm::setSearchTraditionalSimplified,
+                onAllowCleartextHttp = vm::setAllowCleartextHttp,
+                onTrustSelfSignedCert = vm::setTrustSelfSignedCert,
+                onLibraryDisplayMode = vm::setLibraryDisplayMode,
+                onAbout = { subNav.navigate("about") },
+                onBack = { /* tab 页无返回 */ },
+            )
+        }
+        composable("about") {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            app.myplayer.feature.settings.AboutScreen(
+                versionName = runCatching {
+                    ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0.1.0"
+                }.getOrDefault("0.1.0"),
+                onBack = { subNav.popBackStack() },
+            )
+        }
+    }
 }
 
 /** 搜索 tab：本地索引 + 输入即搜（任务 3-5 / 3-6）。 */
