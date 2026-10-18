@@ -57,9 +57,16 @@ class LibraryViewModel(
 
     fun resetFilter() { filterSpec.value = FilterSpec() }
 
-    /** 首次进入 / 手动刷新：先同步库列表，再逐库同步条目（顺序为契约，勿调换）。 */
+    /**
+     * 首次进入 / 手动刷新：先同步库列表，再逐库同步条目（顺序为契约，勿调换）。
+     * 同步失败（网络不通 / 明文 HTTP 被关 / 服务器 5xx）**绝不崩** —— UI 继续展示 Room 缓存。
+     */
     fun refresh(source: MediaSource) = viewModelScope.launch {
-        repository.syncLibraries(source)
-        repository.observeLibraries(serverId).first().forEach { repository.syncItems(source, it.id) }
+        runCatching {
+            repository.syncLibraries(source)
+            repository.observeLibraries(serverId).first().forEach { repository.syncItems(source, it.id) }
+        }.onFailure { e ->
+            android.util.Log.w("LimeSync", "库同步失败（展示本地缓存）", e)
+        }
     }
 }

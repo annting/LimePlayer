@@ -37,7 +37,9 @@ data class PlayerSettings(
     val unlockGraceMillis: Long = 0L,
     val hideRecentsSnapshot: Boolean = false,
     // 网络
-    val allowCleartextHttp: Boolean = false,
+    // 与 `01` §6 的「默认关」偏离：家庭 NAS 几乎全是 http://，默认关 = 开箱连不上；
+    // 安全收紧由用户在设置页主动关闭（OkHttp 拦截器即刻生效）
+    val allowCleartextHttp: Boolean = true,
     val trustSelfSignedCert: Boolean = false,
     // 预览
     val localThumbnails: Boolean = true,
