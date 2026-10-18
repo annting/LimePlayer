@@ -171,23 +171,35 @@ class PlayerViewModel(
         sessionCaps = caps
         autoPlayNextEnabled = autoPlayNext
         viewModelScope.launch {
-            val item = source.getItemDetail(itemId)
-            _ui.update { it.copy(item = item, nextUpVisible = false, nextUpCountdown = 0, finished = false) }
-            val plan = source.planPlayback(item, caps)
-            currentPlan = plan
-            transcodeRetried = false
-            engine.prepare(plan, item.userData.resumePositionTicks.millis)
-            engine.play()
-            // 相邻集异步加载（不阻塞起播；网络失败就等于没有连播）
-            adjacent = runCatching { source.getAdjacentEpisodes(item) }.getOrElse { AdjacentEpisodes() }
-            // trickplay 预览规格异步加载（服务端未预生成 → null，进度条无预览但不影响播放）
-            val spec = runCatching { source.getTrickplay(item, TRICKPLAY_WIDTH) }.getOrNull()
-            _ui.update { it.copy(trickplay = spec) }
-            scheduleAutoHide()
-            // 启动进度上报（开始 / 每 10s / 暂停 / 结束，随 ViewModel 生命周期）
-            sessionSource = source
-            sessionItem = item
-            reporter = reporterFactory?.invoke(source, item)?.also { it.start(viewModelScope) }
+            try {
+                val item = source.getItemDetail(itemId)
+                _ui.update { it.copy(item = item, nextUpVisible = false, nextUpCountdown = 0, finished = false) }
+                val plan = source.planPlayback(item, caps)
+                android.util.Log.d("LimePlay", "协商完成 uri=${plan.let { if (it is app.myplayer.core.model.PlaybackPlan.Direct) it.uri.take(80) else "transcode" }}")
+                currentPlan = plan
+                transcodeRetried = false
+                engine.prepare(plan, item.userData.resumePositionTicks.millis)
+                engine.play()
+                // 相邻集异步加载（不阻塞起播；网络失败就等于没有连播）
+                adjacent = runCatching { source.getAdjacentEpisodes(item) }.getOrElse { AdjacentEpisodes() }
+                // trickplay 预览规格异步加载（服务端未预生成 → null，进度条无预览但不影响播放）
+                val spec = runCatching { source.getTrickplay(item, TRICKPLAY_WIDTH) }.getOrNull()
+                _ui.update { it.copy(trickplay = spec) }
+                scheduleAutoHide()
+                // 启动进度上报（开始 / 每 10s / 暂停 / 结束，随 ViewModel 生命周期）
+                sessionSource = source
+                sessionItem = item
+                reporter = reporterFactory?.invoke(source, item)?.also { it.start(viewModelScope) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("LimePlay", "准备阶段失败", e)
+                // 取详情 / 协商播放地址失败（超时、签名失效、服务端报错）都不能崩：
+                // 落到错误卡片，用户可「重试」（`03` §5.8）
+                _ui.update {
+                    it.copy(error = EngineError(SOURCE_ERROR_CODE, e.message ?: e::class.java.simpleName))
+                }
+            }
         }
     }
 
@@ -461,6 +473,8 @@ class PlayerViewModel(
         /** 连播浮层出现阈值（`03` §5.7：播至 90%）。 */
         const val NEXT_UP_THRESHOLD_PERCENT = 90
         const val NEXT_UP_COUNTDOWN_SECONDS = 10
+        /** 取详情 / 协商播放地址失败的错误码（与引擎错误码区分：负数段）。 */
+        const val SOURCE_ERROR_CODE = -1
         /** trickplay 请求宽度档位（Emby 常见预生成档：320）。 */
         const val TRICKPLAY_WIDTH = 320
     }

@@ -14,6 +14,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.security.MessageDigest
+import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
@@ -28,7 +29,15 @@ class FnClient(
     private val baseUrl: String,
     private val secret: String = BuildConfig.FN_SECRET,
     private val apiKey: String = BuildConfig.FN_API_KEY,
-    private val client: OkHttpClient = OkHttpClient(),
+    /**
+     * 默认超时比 OkHttp 内置（10s）宽：`play/play` 会**触发服务端起转码**，
+     * 首帧协商实测 >10s（真机曾因此 `SocketTimeoutException`）。
+     */
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build(),
     private val deviceId: String = "limeplayer",
     /** 版本号随飞牛升级可能变化，可在服务器配置里覆盖。 */
     private val clientVersion: String = "631",
@@ -113,7 +122,16 @@ class FnClient(
 
     fun setToken(value: String?) { token = value }
 
-    enum class Kind { OK }
+    /**
+     * 图片等非 JSON 资源用的鉴权头。
+     * 海报 `/v/api/v1/sys/img/...` 与 API 同一套鉴权（实测带 `Authorization` 返回 `image/webp`，
+     * 不带则返回 `{"code":-2,"msg":"Auth Failed"}`）。
+     */
+    fun authHeaders(): Map<String, String> = buildMap {
+        token?.let { put("Authorization", it) }
+        put("x-trim-client", "web")
+        put("x-trim-client-version", clientVersion)
+    }
 }
 
 class FnException(message: String) : Exception(message)

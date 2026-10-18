@@ -129,7 +129,10 @@ class MainActivity : ComponentActivity() {
         // 锁屏**覆盖**在内容上而非替换内容（`02` §6.7）：NavHost 常驻，
         // 否则回前台重新上锁会把导航栈卸载重建 → 丢失播放页（回到起始页）。
         // 解锁前设置可能未加载，NavHost 先按无服务器渲染，被锁屏挡住即可。
-        val activeConfig = servers.firstOrNull()
+        // 当前服务器：优先 settings.activeServerId（新增服务器后会自动指向新的），
+        // 未设置或指向已删除的服务器时回落到列表第一个。
+        val activeConfig = servers.firstOrNull { it.id == settings?.activeServerId }
+            ?: servers.firstOrNull()
         val source: MediaSource? = remember(activeConfig) { activeConfig?.let(sourceFactory::create) }
         val showWelcome = activeConfig == null || source == null
 
@@ -138,6 +141,7 @@ class MainActivity : ComponentActivity() {
                 repository = libraryRepository,
                 serverConfigStore = serverConfigStore,
                 tokenStore = tokenStore,
+                settingsStore = settingsStore,
                 client = client,
                 clientCapabilities = clientCapabilities,
                 engineHolder = engineHolder,

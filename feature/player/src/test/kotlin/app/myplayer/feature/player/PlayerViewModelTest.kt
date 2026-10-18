@@ -105,14 +105,18 @@ class PlayerViewModelTest {
         private val plan: PlaybackPlan,
         private val next: MediaItemDto? = null,
         private val transcodePlan: PlaybackPlan? = null,
+        /** 模拟取详情时抛异常（网络超时 / 签名失效）。 */
+        private val detailError: Throwable? = null,
     ) : MediaSource {
         override val type = SourceType.EMBY
         override val serverId = "srv"
 
         override suspend fun getLibraries(): List<MediaLibrary> = error("unused")
         override suspend fun getItems(query: ItemQuery): PagedResult<MediaItemDto> = error("unused")
-        override suspend fun getItemDetail(id: String): MediaItemDto =
-            if (next != null && id == next.id) next else detail
+        override suspend fun getItemDetail(id: String): MediaItemDto {
+            detailError?.let { throw it }
+            return if (next != null && id == next.id) next else detail
+        }
         override suspend fun image(item: MediaItemDto, kind: ImageKind, size: ImageSize): ImageSource = error("unused")
         override suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan = plan
         override suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec? = null
@@ -406,6 +410,18 @@ class PlayerViewModelTest {
         assertThat(vm.ui.value.scrubbing).isFalse()
         assertThat(vm.ui.value.positionMs).isEqualTo(60_000L)   // 乐观更新
         assertThat(engine.seeks).containsExactly(60_000L)
+    }
+
+    @Test
+    fun `取详情抛异常时落错误卡片而不是崩溃`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val src = FakeSource(item(), plan, detailError = java.net.SocketTimeoutException("Read timed out"))
+        val vm = PlayerViewModel(engine, reporterFactory = null).also { it.start("i1", src, caps) }
+        runCurrent()
+
+        assertThat(vm.ui.value.error).isNotNull()
+        assertThat(vm.ui.value.error!!.message).contains("Read timed out")
+        assertThat(engine.preparedPlan).isNull()   // 没有装载任何计划
     }
 
     // ---- 2-7 连播与降级 ----

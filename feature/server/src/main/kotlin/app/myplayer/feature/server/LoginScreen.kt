@@ -18,7 +18,8 @@ import app.myplayer.core.designsystem.components.StepsIndicator
 
 /**
  * 登录页（`docs/03` §9 / 设计板 ④⑪）：账号 + 密码 + 登录；`SUCCESS` 时通过 [onLoggedIn] 通知导航。
- * M1 **不显示**「NAS 账号授权 / 扫码登录」分段控件（spec §17：不做占位、不做置灰入口）。
+ * 标题按所选源变化（Emby / Jellyfin / 飞牛影视），登录实现由调用方按源注入。
+ * **不显示**「NAS 账号授权 / 扫码登录」分段控件（spec §17：不做占位、不做置灰入口）。
  */
 @Composable
 fun LoginScreen(
@@ -29,6 +30,7 @@ fun LoginScreen(
     onLoggedIn: () -> Unit,
     modifier: Modifier = Modifier,
     serverLabel: String? = null,
+    sourceName: String = "Emby",
     onBack: (() -> Unit)? = null,
 ) {
     LaunchedEffect(state.status) {
@@ -36,7 +38,7 @@ fun LoginScreen(
     }
     Column(modifier.fillMaxSize()) {
         PageHeader(
-            title = "登录 Emby",
+            title = "登录 $sourceName",
             subtitle = serverLabel?.let { "连接 $it" } ?: "输入服务器账号",
             onBack = onBack,
         )

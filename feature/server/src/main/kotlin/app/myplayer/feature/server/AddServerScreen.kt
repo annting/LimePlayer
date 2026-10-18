@@ -1,6 +1,7 @@
 package app.myplayer.feature.server
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -25,14 +26,18 @@ import app.myplayer.core.designsystem.components.FieldIcon
 import app.myplayer.core.designsystem.components.PageHeader
 import app.myplayer.core.designsystem.components.ServerIcon
 import app.myplayer.core.designsystem.components.StepsIndicator
+import app.myplayer.core.model.SourceType
 
 /**
  * 添加服务器（`docs/03` §9 / 设计板 ③⑪）：选源卡片 → 地址 + 端口 → 测试连接回显 → 下一步。
- * 选源只有 **Emby 一张卡片**（本机视频属 L2、飞牛登录页在 M4 出现，不做占位入口）。
+ *
+ * 三个源各自的默认端口与探测端点不同（`docs/05` §6.9）：
+ * Emby / Jellyfin 走 `/System/Info/Public`，飞牛影视走免签名的 `/v/api/v1/sys/version`（端口 5666）。
  */
 @Composable
 fun AddServerScreen(
     state: AddServerUiState,
+    onSelectSource: (SourceType) -> Unit,
     onAddressChange: (String) -> Unit,
     onPortChange: (String) -> Unit,
     onTest: () -> Unit,
@@ -58,7 +63,21 @@ fun AddServerScreen(
 
             SourceCard(
                 title = "Emby",
-                description = "用 Emby 账号密码登录",
+                description = "用 Emby 账号密码登录（默认 8096）",
+                selected = state.sourceType == SourceType.EMBY,
+                onClick = { onSelectSource(SourceType.EMBY) },
+            )
+            SourceCard(
+                title = "Jellyfin",
+                description = "用 Jellyfin 账号密码登录（默认 8096）",
+                selected = state.sourceType == SourceType.JELLYFIN,
+                onClick = { onSelectSource(SourceType.JELLYFIN) },
+            )
+            SourceCard(
+                title = "飞牛影视",
+                description = "fnOS 影视（默认 5666），海报来自飞牛刮削",
+                selected = state.sourceType == SourceType.FNOS,
+                onClick = { onSelectSource(SourceType.FNOS) },
             )
 
             AppField(
@@ -73,7 +92,7 @@ fun AddServerScreen(
                 label = "端口",
                 value = state.port,
                 onValueChange = onPortChange,
-                placeholder = "8096",
+                placeholder = state.portHint,
                 leadingIcon = FieldIcon.Server,
                 keyboardType = KeyboardType.Number,
                 imeAction = ImeAction.Done,
@@ -92,7 +111,7 @@ fun AddServerScreen(
                     version = probe.version,
                     product = probe.productName,
                 )
-                is ProbeStatus.NotFound -> HintLine("地址可达但未识别为 Emby 服务——请检查端口与路径前缀。")
+                is ProbeStatus.NotFound -> HintLine("地址可达但未识别为${state.sourceName}服务——请检查端口与路径前缀。")
                 is ProbeStatus.Unreachable -> HintLine(probe.reason, isError = true)
                 else -> Unit
             }
@@ -114,20 +133,28 @@ fun AddServerScreen(
     }
 }
 
-/** 选源卡片（设计板 `.source-card`）：品牌柔底图标 + 标题 / 说明。 */
+/** 选源卡片（设计板 `.source-card`）：品牌柔底图标 + 标题 / 说明；选中态由边框与对勾表示。 */
 @Composable
 private fun SourceCard(
     title: String,
     description: String,
+    selected: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val borderColor = if (selected) scheme.primary else scheme.outlineVariant
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(AppRadius.sourceCard.dp))
-            .background(scheme.surface)
-            .clickable(onClick = { /* M1 只有 Emby；M4 增加飞牛卡片时在此切换选中态 */ })
+            .background(if (selected) scheme.primaryContainer.copy(alpha = 0.35f) else scheme.surface)
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = borderColor,
+                shape = RoundedCornerShape(AppRadius.sourceCard.dp),
+            )
+            .clickable(onClick = onClick)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -148,6 +175,9 @@ private fun SourceCard(
                 color = LocalAppColors.current.text3,
                 modifier = Modifier.padding(top = 4.dp),
             )
+        }
+        if (selected) {
+            CheckIcon(tint = scheme.primary, modifier = Modifier.size(18.dp))
         }
     }
 }

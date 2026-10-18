@@ -46,4 +46,10 @@ data class PlayerSettings(
     val searchTraditionalSimplified: Boolean = false,
     // 界面
     val libraryDisplayMode: LibraryDisplayMode = LibraryDisplayMode.AUTO,
+    // 服务器
+    /**
+     * 当前使用的服务器 id（多服务器切换）。
+     * null = 未选择，回落到服务器列表第一个；新增服务器后会自动指向新服务器。
+     */
+    val activeServerId: String? = null,
 )

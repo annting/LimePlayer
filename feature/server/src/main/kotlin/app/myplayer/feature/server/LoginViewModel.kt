@@ -23,10 +23,12 @@ class LoginViewModel(
     private val serverId: String,
     private val sourceType: SourceType,
     private val baseUrl: String,
-    /** 生产环境传 `httpApi::authenticateByName`；测试传假实现。 */
+    /** 生产环境传 `httpApi::authenticateByName`（飞牛传 `FnClient.login` 的适配）；测试传假实现。 */
     private val login: suspend (String, String) -> AuthResultDto,
     private val configStore: ServerConfigStore,
     private val tokenStore: TokenStore,
+    /** 登录成功后把这个服务器设为当前服务器（多服务器切换）。测试可不传。 */
+    private val settingsStore: app.myplayer.core.datastore.SettingsStore? = null,
 ) {
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state
@@ -54,6 +56,9 @@ class LoginViewModel(
                     userId = result.user.id,
                 )
             )
+            // 新登录的服务器即当前服务器：否则「添加第二台服务器」后仍停在旧服务器上，
+            // 用户会以为添加失败（见 M5 服务器管理）。
+            settingsStore?.setActiveServerId(serverId)
             _state.value = _state.value.copy(status = LoginStatus.SUCCESS)
         } catch (e: ApiException.Unauthorized) {
             _state.value = _state.value.copy(status = LoginStatus.ERROR, message = "账号或密码错误")

@@ -52,6 +52,9 @@ class LocalThumbnailProvider(
         val src = source ?: return ImageSource.None
         val plan = runCatching { kotlinx.coroutines.runBlocking { src.planPlayback(item, caps) } }.getOrNull()
         val direct = plan as? PlaybackPlan.Direct ?: return ImageSource.None
+        // HLS（.m3u8）不抽帧：片段时间轴不连续，**且有的源（飞牛影视）协商 HLS 会在服务端真起一个
+        // 转码会话** —— 列表里每张缺图都协商一次会把 NAS 的转码进程堆满（2026-10-18 真机实测拖死服务端）。
+        if (direct.uri.contains(".m3u8", ignoreCase = true)) return ImageSource.None
         val bitmap: Bitmap? = runCatching {
             MediaMetadataRetriever().let { r ->
                 try {

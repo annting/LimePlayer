@@ -16,7 +16,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    testOptions { unitTests.isIncludeAndroidResources = true }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        // 允许生产代码里的 android.util.Log 在 JVM 单测中作为空实现（返回默认值）
+        unitTests.isReturnDefaultValues = true
+    }
 
     buildFeatures { compose = true }
 }

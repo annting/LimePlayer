@@ -5,6 +5,7 @@ import app.myplayer.core.datastore.InMemoryTokenStore
 import app.myplayer.core.datastore.ServerConfig
 import app.myplayer.core.model.SourceType
 import app.myplayer.source.emby.EmbySource
+import app.myplayer.source.fnos.FnSource
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import okhttp3.OkHttpClient
@@ -34,5 +35,21 @@ class SourceFactoryTest {
         // 有令牌但无 userId
         factory.tokenStore.put("s2", "TK")
         assertThat(factory.create(ServerConfig("s2", SourceType.EMBY, "Home", "http://nas:8096"))).isNull()
+    }
+
+    @Test fun `飞牛影视只需令牌不需要 userId`() {
+        factory.tokenStore.put("f1", "FNTOKEN")
+        // userId 留空也要能造出来（飞牛接口不依赖 userId）
+        val source = factory.create(
+            ServerConfig("f1", SourceType.FNOS, "飞牛影视", "http://192.168.31.222:5666"),
+        )
+        assertThat(source).isInstanceOf(FnSource::class.java)
+        assertThat(source!!.type).isEqualTo(SourceType.FNOS)
+        assertThat(source.serverId).isEqualTo("f1")
+
+        // 但没有令牌仍然返回 null（需要重新登录）
+        assertThat(
+            factory.create(ServerConfig("f2", SourceType.FNOS, "飞牛影视", "http://192.168.31.222:5666"))
+        ).isNull()
     }
 }

@@ -25,9 +25,17 @@ class SourceFactory(
     /**
      * 令牌或 userId 缺失时返回 **null**（= 需要重新登录），
      * 而不是造一个会在第一次请求时抛 `requireNotNull(userId)` 的半成品 source。
+     * 例外：飞牛影视的接口不需要 userId（签名 + token 即可），所以只校验令牌。
      */
     fun create(config: ServerConfig): MediaSource? {
         val token = tokenStore.get(config.id) ?: return null
+        if (config.sourceType == SourceType.FNOS) {
+            return FnSource(
+                client = FnClient(baseUrl = config.baseUrl).also { it.setToken(token) },
+                baseUrl = config.baseUrl,
+                serverId = config.id,
+            )
+        }
         val userId = config.userId ?: return null
         return when (config.sourceType) {
             SourceType.EMBY -> EmbySource.create(
@@ -48,12 +56,7 @@ class SourceFactory(
                 // 前缀留空；飞牛 / 反代实测有前缀时在 ServerConfig 加字段后传进来（`02` §R4）
                 prefix = "",
             )
-            SourceType.FNOS -> FnSource(
-                client = FnClient(baseUrl = config.baseUrl).also { it.setToken(token) },
-                baseUrl = config.baseUrl,
-                serverId = config.id,
-            )
-            // LOCAL 在 L2。
+            // FNOS 已在上面提前返回；LOCAL 在 L2。
             else -> null
         }
     }

@@ -35,8 +35,13 @@ import app.myplayer.feature.server.AddServerViewModel
 import app.myplayer.feature.server.LoginScreen
 import app.myplayer.feature.server.LoginViewModel
 import app.myplayer.feature.server.ProbeStatus
+import app.myplayer.feature.server.defaultPort
+import app.myplayer.feature.server.fnosLogin
 import app.myplayer.feature.server.normalizeBaseUrl
+import app.myplayer.feature.server.probeFnos
 import app.myplayer.feature.server.probeServer
+import app.myplayer.feature.server.sourceDisplayName
+import app.myplayer.source.httpapi.AuthResultDto
 import app.myplayer.source.httpapi.HttpMediaApi
 import app.myplayer.source.httpapi.SourceConfig
 import kotlinx.coroutines.launch
@@ -61,6 +66,7 @@ fun AppNavHost(
     repository: LibraryRepository,
     serverConfigStore: ServerConfigStore,
     tokenStore: TokenStore,
+    settingsStore: app.myplayer.core.datastore.SettingsStore,
     client: OkHttpClient,
     clientCapabilities: ClientCapabilities,
     engineHolder: app.myplayer.playback.PlaybackEngineHolder,
@@ -82,10 +88,18 @@ fun AppNavHost(
         }
 
         composable(Routes.ADD_SERVER) {
-            val vm = remember { AddServerViewModel(probe = { base, port -> probeServer(client, base, port) }) }
+            val vm = remember {
+                AddServerViewModel(
+                    probe = { type, base ->
+                        // 飞牛影视没有 /System/Info/Public，走它自己的免签名版本端点（`docs/05` §6.9）
+                        if (type == SourceType.FNOS) probeFnos(client, base) else probeServer(client, base, "")
+                    }
+                )
+            }
             val state by vm.state.collectAsStateWithLifecycle()
             AddServerScreen(
                 state = state,
+                onSelectSource = vm::onSelectSource,
                 onAddressChange = vm::onAddressChange,
                 onPortChange = vm::onPortChange,
                 onTest = { scope.launch { vm.onTest() } },
@@ -94,8 +108,11 @@ fun AppNavHost(
                     if (s.probeStatus is ProbeStatus.Reachable) {
                         pending = PendingServer(
                             serverId = UUID.randomUUID().toString(),
-                            sourceType = s.detectedSourceType,
-                            baseUrl = normalizeBaseUrl(s.address, s.port.toIntOrNull() ?: 8096),
+                            sourceType = s.sourceType,
+                            baseUrl = normalizeBaseUrl(
+                                s.address,
+                                s.port.toIntOrNull() ?: defaultPort(s.sourceType),
+                            ),
                         )
                         nav.navigate(Routes.LOGIN)
                     }
@@ -116,14 +133,23 @@ fun AppNavHost(
                         config = SourceConfig(serverId = target.serverId, baseUrl = target.baseUrl),
                     )
                 }
+                // 登录实现按源分派：飞牛影视用自己的 /v/api/v1/login（返回 token，无 userId 概念）
+                val loginCall: suspend (String, String) -> AuthResultDto = remember(target) {
+                    if (target.sourceType == SourceType.FNOS) {
+                        { username, password -> fnosLogin(target.baseUrl, username, password) }
+                    } else {
+                        api::authenticateByName
+                    }
+                }
                 val loginVm = remember(target) {
                     LoginViewModel(
                         serverId = target.serverId,
                         sourceType = target.sourceType,
                         baseUrl = target.baseUrl,
-                        login = api::authenticateByName,
+                        login = loginCall,
                         configStore = serverConfigStore,
                         tokenStore = tokenStore,
+                        settingsStore = settingsStore,
                     )
                 }
                 val loginState by loginVm.state.collectAsStateWithLifecycle()
@@ -137,6 +163,7 @@ fun AppNavHost(
                         nav.navigate(Routes.MAIN) { popUpTo(0) }
                     },
                     serverLabel = target.baseUrl.removePrefix("http://").removePrefix("https://"),
+                    sourceName = sourceDisplayName(target.sourceType),
                     onBack = { nav.popBackStack() },
                 )
             }

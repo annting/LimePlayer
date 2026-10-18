@@ -41,6 +41,7 @@ interface SettingsStore {
     suspend fun setSearchFuzzyPinyin(v: Boolean) = update { it.copy(searchFuzzyPinyin = v) }
     suspend fun setSearchTraditionalSimplified(v: Boolean) = update { it.copy(searchTraditionalSimplified = v) }
     suspend fun setLibraryDisplayMode(v: LibraryDisplayMode) = update { it.copy(libraryDisplayMode = v) }
+    suspend fun setActiveServerId(v: String?) = update { it.copy(activeServerId = v) }
 }
 
 class InMemorySettingsStore : SettingsStore {
