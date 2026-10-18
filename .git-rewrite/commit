@@ -1,0 +1,9 @@
+tree c482ac6688a7d352d53ff5d0cfda008dc19df44d
+parent f18fe7a00c857a2f35de2177e2c4ce237317a862
+author annting <893208385@163.com> 1792283141 +0800
+committer annting <893208385@163.com> 1792283141 +0800
+
+chore(security): redact fnOS secret values from tracked docs
+
+- docs/05 用 <FN_SECRET>/<FN_API_KEY> 占位，算法描述保留
+- 具体值移入 docs/LOCAL_SECRETS.md 并加入 .gitignore（不入库）

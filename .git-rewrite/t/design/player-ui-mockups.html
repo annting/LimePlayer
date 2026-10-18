@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>青柠视频播放器 LimePlayer · UI 高保真设计板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --dur-fast:140ms; --dur:220ms; --dur-slow:300ms;
+  --ease-in:cubic-bezier(.4,0,.2,1); --ease-out:cubic-bezier(0,0,.2,1); --ease-emph:cubic-bezier(.2,0,0,1);
+  --font-ui:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --font-display:"Familjen Grotesk","Noto Sans SC",system-ui,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,monospace;
+  color-scheme:light;
+}
+:root,[data-theme="light"]{
+  --bg:#F4F6F9; --surface:#FFFFFF; --surface-2:#ECEFF4; --surface-3:#E1E5EC;
+  --border:#DCE0E7; --border-strong:#C6CCD6;
+  --text:#14171D; --text-2:#5A6472; --text-3:#8B94A2;
+  --brand:#7CB342; --brand-ink:#FFFFFF; --brand-soft:#E8F0DB; --brand-glow:rgba(124,179,66,.20);
+  --success:#2F9E63; --warning:#D9822B; --danger:#D0453F;
+  --bezel:#D8DCE3; --bezel-hi:rgba(255,255,255,.9); --page:#EDF0F4; --page-ink:#14171D;
+  --shadow-lift:0 18px 40px -22px rgba(16,20,28,.38); --shadow-card:0 10px 26px -18px rgba(16,20,28,.5); --grain:.015;
+}
+[data-theme="dark"]{
+  --bg:#0B0D11; --surface:#14171D; --surface-2:#1C2028; --surface-3:#262B35;
+  --border:#262C36; --border-strong:#333A46;
+  --text:#E8EBF1; --text-2:#9AA3B2; --text-3:#6B7484;
+  --brand:#AED581; --brand-ink:#1B2A10; --brand-soft:rgba(174,213,129,.14); --brand-glow:rgba(174,213,129,.26);
+  --success:#4ED08A; --warning:#E8A33D; --danger:#F2685F;
+  --bezel:#2A2F38; --bezel-hi:rgba(255,255,255,.12); --page:#0E1116; --page-ink:#E8EBF1;
+  --shadow-lift:0 24px 60px -26px rgba(0,0,0,.82); --shadow-card:0 16px 34px -20px rgba(0,0,0,.86); --grain:.04; color-scheme:dark;
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; }
+body{ background:var(--page); color:var(--page-ink); font-family:var(--font-ui); -webkit-font-smoothing:antialiased;
+  transition:background-color var(--dur-slow) var(--ease-in), color var(--dur-slow) var(--ease-in); }
+body::before{ content:""; position:fixed; inset:0; pointer-events:none; z-index:9999; opacity:var(--grain); mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"); }
+.board-head{ position:sticky; top:0; z-index:50; display:flex; align-items:center; gap:20px; flex-wrap:wrap;
+  padding:14px 28px; background:color-mix(in srgb,var(--page) 84%,transparent); backdrop-filter:blur(14px) saturate(1.3); border-bottom:1px solid var(--border); }
+.brand-lock{ display:flex; align-items:center; gap:12px; margin-right:auto; }
+.brand-lock .mark{ width:36px; height:36px; border-radius:11px; overflow:hidden; display:grid; place-items:center; background:var(--surface-2); box-shadow:0 6px 18px -8px var(--brand-glow); }
+.brand-lock .mark img{ width:100%; height:100%; object-fit:cover; display:block; }
+.brand-lock h1{ margin:0; font-family:var(--font-display); font-size:19px; font-weight:600; }
+.brand-lock p{ margin:1px 0 0; font-size:11px; color:var(--text-3); letter-spacing:.16em; text-transform:uppercase; font-family:var(--font-mono); }
+.head-tools{ display:flex; align-items:center; gap:14px; }
+.head-tools .lbl{ font-size:11.5px; color:var(--text-3); font-family:var(--font-mono); letter-spacing:.08em; }
+.seg{ position:relative; display:inline-flex; padding:3px; gap:2px; background:var(--surface-2); border:1px solid var(--border); border-radius:999px; }
+.seg .ind{ position:absolute; top:3px; bottom:3px; border-radius:999px; background:var(--surface); box-shadow:var(--shadow-card);
+  transition:transform var(--dur-slow) var(--ease-emph), width var(--dur-slow) var(--ease-emph), background-color var(--dur) var(--ease-in); }
+.seg button{ position:relative; z-index:1; border:0; background:transparent; cursor:pointer; font-family:var(--font-ui);
+  font-size:12.5px; font-weight:500; color:var(--text-2); padding:7px 15px; border-radius:999px;
+  transition:color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.seg button:active{ transform:scale(.95); }
+.seg button[aria-pressed="true"]{ color:var(--text); }
+main{ padding:30px 28px 90px; max-width:1600px; margin:0 auto; }
+.section-title{ display:flex; align-items:baseline; gap:12px; margin:48px 0 20px; }
+.section-title:first-child{ margin-top:8px; }
+.section-title h2{ margin:0; font-family:var(--font-display); font-size:22px; font-weight:600; }
+.section-title span{ font-size:12px; color:var(--text-3); font-family:var(--font-mono); letter-spacing:.06em; }
+.section-title .rule{ flex:1; height:1px; background:linear-gradient(90deg,var(--border),transparent); }
+.reveal{ opacity:0; transform:translateY(14px); animation:rise var(--dur-slow) var(--ease-in) forwards; }
+@keyframes rise{ to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){ *{ animation-duration:1ms !important; transition-duration:1ms !important; } .reveal{ opacity:1; transform:none; } }
+.frames{ display:flex; flex-wrap:wrap; gap:34px; align-items:flex-start; }
+.frame-wrap{ display:flex; flex-direction:column; gap:12px; }
+.frame-cap{ display:flex; align-items:center; gap:8px; padding-left:6px; }
+.frame-cap b{ font-size:13.5px; font-weight:600; }
+.frame-cap i{ font-size:11px; color:var(--text-3); font-style:normal; font-family:var(--font-mono); letter-spacing:.05em; }
+.device{ position:relative; width:322px; height:668px; padding:11px; border-radius:44px; background:var(--bezel);
+  box-shadow:var(--shadow-lift), inset 0 0 0 1px var(--bezel-hi); transition:background-color var(--dur-slow) var(--ease-in), transform var(--dur) var(--ease-in); }
+.device:hover{ transform:translateY(-4px); }
+.device.landscape{ width:660px; height:314px; border-radius:38px; padding:10px; }
+.screen{ position:relative; width:100%; height:100%; border-radius:34px; overflow:hidden; background:var(--bg); color:var(--text);
+  display:flex; flex-direction:column; transition:background-color var(--dur-slow) var(--ease-in); }
+.device.landscape .screen{ border-radius:30px; }
+.island{ position:absolute; top:12px; left:50%; transform:translateX(-50%); width:92px; height:24px; border-radius:999px; background:#000; z-index:30; }
+.device.landscape .island{ top:50%; left:12px; transform:translateY(-50%); width:15px; height:70px; }
+.statusbar{ flex:none; height:40px; padding:0 22px 4px; display:flex; align-items:flex-end; justify-content:space-between;
+  font-size:12px; font-weight:600; font-family:var(--font-mono); }
+.statusbar .glyphs{ display:flex; gap:6px; align-items:center; opacity:.9; }
+.gesturebar{ flex:none; height:22px; display:grid; place-items:center; }
+.gesturebar i{ width:118px; height:4px; border-radius:999px; background:color-mix(in srgb,var(--text) 34%,transparent); }
+.device.landscape .gesturebar{ display:none; }
+.appbar{ flex:none; height:54px; padding:0 12px 0 16px; display:flex; align-items:center; gap:6px; }
+.appbar .t{ flex:1; min-width:0; }
+.appbar .t h3{ margin:0; font-size:19px; font-weight:600; }
+.appbar .t p{ margin:2px 0 0; font-size:11.5px; color:var(--text-3); }
+.icon-btn{ flex:none; width:40px; height:40px; border-radius:14px; border:0; cursor:pointer; display:grid; place-items:center;
+  background:transparent; color:var(--text-2); transition:background-color var(--dur) var(--ease-in), color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.icon-btn:hover{ background:var(--surface-2); color:var(--text); }
+.icon-btn:active{ transform:scale(.9); }
+.icon-btn svg{ width:21px; height:21px; }
+.scroll{ flex:1; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
+.scroll::-webkit-scrollbar{ display:none; }
+.chips{ display:flex; gap:8px; padding:4px 16px 14px; overflow-x:auto; scrollbar-width:none; }
+.chips::-webkit-scrollbar{ display:none; }
+.chip{ flex:none; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:13px; font-weight:500;
+  padding:7px 15px; border-radius:999px; cursor:pointer; font-family:var(--font-ui);
+  transition:background-color var(--dur) var(--ease-in), color var(--dur) var(--ease-in), border-color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.chip:hover{ border-color:var(--border-strong); }
+.chip:active{ transform:scale(.94); }
+.chip[aria-pressed="true"]{ background:var(--text); color:var(--bg); border-color:var(--text); }
+.block-head{ display:flex; align-items:center; gap:10px; padding:6px 16px 10px; }
+.block-head b{ font-size:15.5px; font-weight:600; }
+.block-head .count{ font-size:11px; color:var(--text-3); font-family:var(--font-mono); }
+.block-head .more{ margin-left:auto; font-size:12.5px; color:var(--text-2); cursor:pointer; display:flex; align-items:center; gap:3px; transition:color var(--dur) var(--ease-in), gap var(--dur) var(--ease-in); }
+.block-head .more:hover{ color:var(--brand); gap:6px; }
+.block-head .more svg{ width:14px; height:14px; }
+.rail{ display:flex; gap:12px; padding:0 16px 8px; overflow-x:auto; scrollbar-width:none; scroll-snap-type:x proximity; }
+.rail::-webkit-scrollbar{ display:none; }
+.poster{ flex:none; width:118px; scroll-snap-align:start; cursor:pointer; transition:transform var(--dur) var(--ease-in); }
+.poster:active{ transform:scale(.96); }
+.poster .art{ position:relative; aspect-ratio:2/3; border-radius:14px; overflow:hidden; box-shadow:var(--shadow-card); transition:box-shadow var(--dur) var(--ease-in), transform var(--dur) var(--ease-in); }
+.poster:hover .art{ transform:translateY(-4px); box-shadow:var(--shadow-lift); }
+.poster .art::after{ content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.72)); }
+.poster .art .g{ position:absolute; inset:0; }
+.g1{ background:radial-gradient(120% 90% at 20% 10%,#2A6F8E,#0E2B3A 62%),linear-gradient(160deg,#123040,#08161E); }
+.g2{ background:radial-gradient(120% 90% at 80% 15%,#B4643A,#3A1B12 65%),linear-gradient(160deg,#4A2416,#1A0E08); }
+.g3{ background:radial-gradient(120% 90% at 25% 85%,#6C5AA8,#221B3E 66%),linear-gradient(160deg,#2C2450,#120E22); }
+.g4{ background:radial-gradient(120% 90% at 70% 20%,#4F7A5A,#1B2E20 64%),linear-gradient(160deg,#243A2A,#0E1712); }
+.g5{ background:radial-gradient(120% 90% at 30% 30%,#A03E52,#33131C 66%),linear-gradient(160deg,#431A24,#190A0F); }
+.g6{ background:radial-gradient(120% 90% at 75% 75%,#3E6E9E,#122436 64%),linear-gradient(160deg,#1C3247,#0A141F); }
+.g7{ background:radial-gradient(120% 90% at 25% 25%,#C79A3E,#3A2A0E 66%),linear-gradient(160deg,#4A3614,#1A1206); }
+.g8{ background:radial-gradient(120% 90% at 60% 80%,#4B5566,#1A1E26 66%),linear-gradient(160deg,#2A303B,#0E1116); }
+.poster .art .tag,.poster .art .rate,.poster .art .ep{ position:absolute; z-index:2; font-family:var(--font-mono); }
+.poster .art .tag{ top:8px; left:8px; font-size:10.5px; font-weight:600; padding:3px 7px; border-radius:7px; background:color-mix(in srgb,#000 55%,transparent); color:#fff; }
+.poster .art .rate{ right:8px; bottom:8px; font-size:11px; font-weight:600; color:#F5C869; text-shadow:0 1px 6px rgba(0,0,0,.7); }
+.poster .art .ep{ left:8px; bottom:8px; font-size:10.5px; color:#fff; opacity:.92; }
+.poster .cap{ margin-top:8px; }
+.poster .cap b{ font-size:12.5px; font-weight:500; line-height:1.3; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.poster .cap i{ display:block; margin-top:3px; font-size:11px; color:var(--text-3); font-style:normal; font-family:var(--font-mono); }
+.resume{ padding:0 16px 14px; }
+.resume .big{ position:relative; border-radius:18px; overflow:hidden; height:168px; cursor:pointer; box-shadow:var(--shadow-card); transition:transform var(--dur) var(--ease-in), box-shadow var(--dur) var(--ease-in); }
+.resume .big:hover{ transform:translateY(-3px); box-shadow:var(--shadow-lift); }
+.resume .big:active{ transform:scale(.985); }
+.resume .big::after{ content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,.05) 30%,rgba(0,0,0,.82)); }
+.resume .big .meta{ position:absolute; left:16px; right:16px; bottom:15px; z-index:3; color:#fff; }
+.resume .big .meta b{ display:block; font-size:14.5px; font-weight:600; }
+.resume .big .meta p{ margin:3px 0 0; font-size:11.5px; opacity:.82; font-family:var(--font-mono); }
+.resume .big .play{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:3; width:46px; height:46px; border-radius:999px; background:color-mix(in srgb,#000 42%,transparent); backdrop-filter:blur(6px); display:grid; place-items:center; color:#fff; border:1px solid rgba(255,255,255,.22); transition:transform var(--dur) var(--ease-emph), background-color var(--dur) var(--ease-in); }
+.resume .big:hover .play{ transform:translate(-50%,-50%) scale(1.08); }
+.resume .big .play svg{ width:20px; height:20px; }
+.progress{ position:relative; height:3px; border-radius:999px; background:rgba(255,255,255,.24); }
+.progress .buf{ position:absolute; inset:0 auto 0 0; width:62%; background:rgba(255,255,255,.32); border-radius:999px; }
+.progress .done{ position:absolute; inset:0 auto 0 0; width:41%; background:var(--brand); border-radius:999px; }
+.progress .knob{ position:absolute; left:41%; top:50%; width:11px; height:11px; border-radius:999px; background:var(--brand); transform:translate(-50%,-50%); box-shadow:0 0 0 4px color-mix(in srgb,var(--brand) 26%,transparent); transition:width var(--dur) var(--ease-in), height var(--dur) var(--ease-in); }
+.progress:hover .knob{ width:15px; height:15px; }
+.resume .progress{ margin-top:9px; }
+.bottomnav{ flex:none; height:58px; display:flex; align-items:center; justify-content:space-around; border-top:1px solid var(--border); background:color-mix(in srgb,var(--surface) 70%,transparent); backdrop-filter:blur(12px); }
+.bottomnav .item{ position:relative; border:0; background:transparent; cursor:pointer; padding:6px 14px; border-radius:14px; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--text-3); font-family:var(--font-ui); transition:color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.bottomnav .item svg{ width:23px; height:23px; transition:transform var(--dur) var(--ease-emph); }
+.bottomnav .item span{ font-size:10.5px; font-weight:500; }
+.bottomnav .item:active{ transform:scale(.9); }
+.bottomnav .item[aria-current="page"]{ color:var(--brand); }
+.bottomnav .item[aria-current="page"] svg{ transform:translateY(-2px); }
+.bottomnav .item[aria-current="page"]::before{ content:""; position:absolute; top:0; left:50%; transform:translateX(-50%); width:22px; height:3px; border-radius:999px; background:var(--brand); animation:navin var(--dur-slow) var(--ease-emph); }
+@keyframes navin{ from{ width:0; opacity:0; } }
+.lockwrap{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; z-index:5; }
+.lockwrap .veil{ position:absolute; inset:0; z-index:-1; background:radial-gradient(120% 80% at 50% 18%,rgba(240,166,60,.12),transparent 60%),radial-gradient(90% 70% at 50% 100%,rgba(80,120,180,.16),transparent 62%); }
+.lock-mark{ width:58px; height:58px; border-radius:18px; display:grid; place-items:center; color:var(--brand-ink); font-family:var(--font-display); font-weight:700; font-size:24px; background:linear-gradient(150deg,var(--brand),color-mix(in srgb,var(--brand) 50%,#000)); box-shadow:0 14px 34px -12px var(--brand-glow); }
+.lock-title{ text-align:center; }
+.lock-title b{ display:block; font-size:17px; font-weight:600; }
+.lock-title p{ margin:6px 0 0; font-size:12px; color:var(--text-3); }
+.lock-title .err{ color:var(--danger); }
+.pattern{ position:relative; width:236px; height:236px; touch-action:none; cursor:crosshair; }
+.pattern svg{ position:absolute; inset:0; width:100%; height:100%; }
+.pattern .dot{ position:absolute; width:62px; height:62px; display:grid; place-items:center; transform:translate(-50%,-50%); }
+.pattern .dot i{ width:15px; height:15px; border-radius:999px; background:var(--surface-3); transition:background-color var(--dur) var(--ease-in), transform var(--dur) var(--ease-emph), box-shadow var(--dur) var(--ease-in); }
+.pattern .dot.on i{ background:var(--brand); transform:scale(1.35); box-shadow:0 0 0 6px var(--brand-glow); }
+.pattern.err{ animation:shake 320ms var(--ease-in); }
+@keyframes shake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-9px)} 75%{transform:translateX(9px)} }
+.lock-ok{ display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--success); font-weight:500; opacity:0; transform:translateY(6px); transition:opacity var(--dur) var(--ease-in), transform var(--dur) var(--ease-in); }
+.lock-ok.show{ opacity:1; transform:none; }
+.mini-btn{ border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:12px; padding:7px 14px; border-radius:999px; cursor:pointer; font-family:var(--font-ui); transition:background-color var(--dur) var(--ease-in), color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.mini-btn:hover{ background:var(--surface-2); color:var(--text); }
+.mini-btn:active{ transform:scale(.94); }
+.formpad{ padding:4px 18px 20px; display:flex; flex-direction:column; gap:14px; }
+.field label{ display:block; font-size:12px; color:var(--text-2); margin-bottom:7px; font-weight:500; }
+.field .box{ display:flex; align-items:center; gap:10px; height:48px; padding:0 14px; background:var(--surface); border:1px solid var(--border); border-radius:14px; transition:border-color var(--dur) var(--ease-in), box-shadow var(--dur) var(--ease-in); }
+.field .box:focus-within{ border-color:var(--brand); box-shadow:0 0 0 4px var(--brand-glow); }
+.field .box svg{ width:18px; height:18px; color:var(--text-3); flex:none; }
+.field input{ flex:1; min-width:0; border:0; outline:0; background:transparent; color:var(--text); font-family:var(--font-ui); font-size:14px; }
+.field input::placeholder{ color:var(--text-3); }
+.field .toggle-eye{ border:0; background:transparent; cursor:pointer; color:var(--text-3); display:grid; place-items:center; transition:color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.field .toggle-eye:active{ transform:scale(.88); }
+.btn{ height:50px; border-radius:15px; border:0; cursor:pointer; width:100%; font-family:var(--font-ui); font-size:15px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:9px; transition:transform var(--dur-fast) var(--ease-in), background-color var(--dur) var(--ease-in), color var(--dur) var(--ease-in), box-shadow var(--dur) var(--ease-in); }
+.btn:active{ transform:scale(.97); }
+.btn-primary{ background:var(--brand); color:var(--brand-ink); box-shadow:0 10px 24px -12px var(--brand-glow); }
+.btn-primary:hover{ background:color-mix(in srgb,var(--brand) 88%,#fff); }
+.btn-tonal{ background:var(--surface-2); color:var(--text); }
+.btn-text{ background:transparent; color:var(--text-2); height:44px; }
+.btn-text:hover{ color:var(--text); }
+.spin{ width:18px; height:18px; border-radius:999px; border:2px solid color-mix(in srgb,#fff 32%,transparent); border-top-color:#fff; animation:spin 700ms linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+.hintline{ font-size:11.5px; color:var(--text-3); line-height:1.55; }
+.badge-soon{ font-size:10px; font-family:var(--font-mono); padding:2px 7px; border-radius:999px; background:var(--brand-soft); color:var(--brand); border:1px solid color-mix(in srgb,var(--brand) 34%,transparent); }
+.tarow{ display:flex; align-items:center; gap:8px; }
+.source-grid{ padding:6px 18px; display:flex; flex-direction:column; gap:12px; }
+.source-card{ position:relative; display:flex; align-items:center; gap:14px; text-align:left; padding:16px; border-radius:18px; cursor:pointer; background:var(--surface); border:1px solid var(--border); width:100%; font-family:var(--font-ui); color:var(--text); transition:transform var(--dur-fast) var(--ease-in), border-color var(--dur) var(--ease-in), box-shadow var(--dur) var(--ease-in); }
+.source-card:hover{ transform:translateY(-3px); border-color:var(--brand); box-shadow:var(--shadow-lift); }
+.source-card:active{ transform:scale(.985); }
+.source-card .ic{ width:52px; height:52px; border-radius:15px; display:grid; place-items:center; flex:none; background:var(--brand-soft); color:var(--brand); transition:transform var(--dur) var(--ease-emph); }
+.source-card:hover .ic{ transform:scale(1.06) rotate(-3deg); }
+.source-card .ic svg{ width:26px; height:26px; }
+.source-card .tx{ flex:1; min-width:0; }
+.source-card .tx b{ display:block; font-size:15.5px; font-weight:600; }
+.source-card .tx p{ margin:4px 0 0; font-size:12px; color:var(--text-3); }
+.source-card .go{ color:var(--text-3); transition:color var(--dur), transform var(--dur) var(--ease-in); }
+.source-card:hover .go{ color:var(--brand); transform:translateX(3px); }
+.steps{ display:flex; align-items:center; gap:8px; padding:2px 18px 8px; }
+.steps i{ height:3px; border-radius:999px; background:var(--surface-3); flex:1; transition:background-color var(--dur) var(--ease-in); }
+.steps i.on{ background:var(--brand); }
+.loading-veil{ position:absolute; inset:0; z-index:20; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; background:color-mix(in srgb,var(--bg) 86%,transparent); backdrop-filter:blur(8px); opacity:1; transition:opacity var(--dur-slow) var(--ease-in); padding:30px; }
+.loading-veil.hide{ opacity:0; pointer-events:none; }
+.big-spin{ width:40px; height:40px; border-radius:999px; border:3px solid var(--surface-3); border-top-color:var(--brand); animation:spin 800ms linear infinite; margin-bottom:16px; }
+.loading-veil b{ font-size:14.5px; }
+.loading-veil p{ margin:6px 0 0; font-size:12px; color:var(--text-3); }
+.grouplabel{ padding:16px 18px 8px; font-size:11.5px; font-family:var(--font-mono); letter-spacing:.08em; color:var(--text-3); text-transform:uppercase; }
+.group{ margin:0 14px; border-radius:18px; overflow:hidden; background:var(--surface); border:1px solid var(--border); }
+.row{ display:flex; align-items:center; gap:12px; padding:14px 16px; cursor:pointer; transition:background-color var(--dur) var(--ease-in); }
+.row + .row{ border-top:1px solid var(--border); }
+.row:hover{ background:var(--surface-2); }
+.row .ic{ width:34px; height:34px; border-radius:11px; display:grid; place-items:center; flex:none; background:var(--surface-2); color:var(--text-2); transition:transform var(--dur) var(--ease-emph); }
+.row:hover .ic{ transform:scale(1.06); }
+.row .ic svg{ width:18px; height:18px; }
+.row .tx{ flex:1; min-width:0; }
+.row .tx b{ display:block; font-size:14px; font-weight:500; }
+.row .tx p{ margin:3px 0 0; font-size:11.5px; color:var(--text-3); }
+.row .val{ font-size:13px; color:var(--text-2); font-family:var(--font-mono); }
+.row .chev{ color:var(--text-3); transition:transform var(--dur) var(--ease-in), color var(--dur); }
+.row:hover .chev{ color:var(--text-2); transform:translateX(2px); }
+.row .chev svg{ width:16px; height:16px; display:block; }
+.switch{ position:relative; width:46px; height:27px; border-radius:999px; flex:none; cursor:pointer; background:var(--surface-3); border:1px solid var(--border-strong); transition:background-color var(--dur) var(--ease-in), border-color var(--dur) var(--ease-in); }
+.switch i{ position:absolute; top:50%; left:4px; width:19px; height:19px; border-radius:999px; background:var(--text-3); transform:translateY(-50%); transition:left var(--dur-slow) var(--ease-emph), width var(--dur-fast) var(--ease-in), height var(--dur-fast) var(--ease-in), background-color var(--dur) var(--ease-in); }
+.switch:hover i{ width:23px; height:23px; }
+.switch[aria-checked="true"]{ background:var(--brand); border-color:var(--brand); }
+.switch[aria-checked="true"] i{ left:22px; background:var(--brand-ink); }
+.switch[aria-checked="true"]:hover i{ left:18px; }
+.expander{ max-height:0; overflow:hidden; transition:max-height var(--dur-slow) var(--ease-emph); }
+.expander.open{ max-height:460px; }
+.inline-seg{ display:inline-flex; gap:2px; padding:3px; border-radius:999px; background:var(--surface-3); position:relative; }
+.inline-seg button{ border:0; background:transparent; cursor:pointer; font-family:var(--font-mono); font-size:11.5px; color:var(--text-2); padding:5px 9px; border-radius:999px; position:relative; z-index:1; transition:color var(--dur) var(--ease-in), transform var(--dur-fast); }
+.inline-seg button:active{ transform:scale(.92); }
+.inline-seg button[aria-pressed="true"]{ color:var(--brand-ink); }
+.inline-seg .gl{ position:absolute; top:3px; bottom:3px; border-radius:999px; background:var(--brand); transition:transform var(--dur-slow) var(--ease-emph), width var(--dur-slow) var(--ease-emph); }
+.player{ position:relative; flex:1; overflow:hidden; }
+.player .film{ position:absolute; inset:0; background:radial-gradient(80% 120% at 22% 30%,#3A6C86 0%,#173140 42%,#08131B 78%),linear-gradient(120deg,#16303E,#0A141C); }
+.player .film::after{ content:""; position:absolute; inset:0; background:linear-gradient(90deg,rgba(0,0,0,.5) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 78%,rgba(0,0,0,.5) 100%); }
+.player .subject{ position:absolute; left:44%; top:46%; width:180px; height:180px; transform:translate(-50%,-50%); background:radial-gradient(circle at 40% 38%,rgba(255,226,180,.9),rgba(240,166,60,.32) 44%,transparent 66%); opacity:.9; }
+.controls{ position:absolute; inset:0; z-index:10; display:flex; flex-direction:column; justify-content:space-between; opacity:1; transition:opacity var(--dur-slow) var(--ease-in); }
+.controls.hide{ opacity:0; }
+.controls::before{ content:""; position:absolute; inset:0; pointer-events:none; background:linear-gradient(180deg,rgba(0,0,0,.55),transparent 26%,transparent 62%,rgba(0,0,0,.72)); }
+.ctl-top{ position:relative; display:flex; align-items:center; gap:10px; padding:14px 18px; z-index:2; }
+.ctl-top .t{ flex:1; min-width:0; }
+.ctl-top .t b{ font-size:14.5px; font-weight:600; color:#fff; }
+.ctl-top .t p{ margin:2px 0 0; font-size:11px; color:rgba(255,255,255,.66); font-family:var(--font-mono); }
+.ctl-btn{ border:1px solid rgba(255,255,255,.16); background:color-mix(in srgb,#000 34%,transparent); backdrop-filter:blur(6px); color:#fff; width:36px; height:36px; border-radius:12px; display:grid; place-items:center; cursor:pointer; transition:background-color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.ctl-btn svg{ width:18px; height:18px; }
+.ctl-btn:hover{ background:color-mix(in srgb,#000 52%,transparent); }
+.ctl-btn:active{ transform:scale(.9); }
+.ctl-btn.setting{ width:auto; padding:0 13px; gap:7px; font-size:12.5px; font-weight:500; font-family:var(--font-ui); }
+.ctl-mid{ position:relative; z-index:2; display:flex; align-items:center; justify-content:center; gap:30px; }
+.ctl-round{ border:1px solid rgba(255,255,255,.16); background:color-mix(in srgb,#000 30%,transparent); backdrop-filter:blur(6px); color:#fff; border-radius:999px; cursor:pointer; display:grid; place-items:center; transition:transform var(--dur-fast) var(--ease-in), background-color var(--dur) var(--ease-in); }
+.ctl-round.s{ width:44px; height:44px; } .ctl-round.s svg{ width:20px; height:20px; }
+.ctl-round.m{ width:64px; height:64px; background:color-mix(in srgb,var(--brand) 92%,#000); border-color:transparent; color:var(--brand-ink); }
+.ctl-round.m svg{ width:26px; height:26px; }
+.ctl-round:hover{ transform:scale(1.06); background:color-mix(in srgb,#000 46%,transparent); }
+.ctl-round.m:hover{ background:color-mix(in srgb,var(--brand) 88%,#fff); }
+.ctl-round:active{ transform:scale(.94); }
+.ctl-bottom{ position:relative; z-index:2; padding:0 18px 14px; }
+.ctl-times{ display:flex; align-items:center; justify-content:space-between; margin-bottom:9px; font-family:var(--font-mono); font-size:12px; color:rgba(255,255,255,.86); }
+.ctl-times .right{ display:flex; gap:8px; align-items:center; }
+.ctl-times .right .pill{ display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; cursor:pointer; background:color-mix(in srgb,#000 34%,transparent); border:1px solid rgba(255,255,255,.14); transition:background-color var(--dur), transform var(--dur-fast); }
+.ctl-times .right .pill:hover{ background:color-mix(in srgb,#000 52%,transparent); }
+.ctl-times .right .pill:active{ transform:scale(.94); }
+.ctl-times .right .pill svg{ width:13px; height:13px; }
+.ctl-times .right .pill.hot{ color:var(--brand); border-color:color-mix(in srgb,var(--brand) 50%,transparent); }
+.track{ position:relative; height:6px; border-radius:999px; background:rgba(255,255,255,.22); cursor:pointer; }
+.track .buf{ position:absolute; inset:0 auto 0 0; width:74%; border-radius:999px; background:rgba(255,255,255,.3); }
+.track .done{ position:absolute; inset:0 auto 0 0; width:38%; border-radius:999px; background:var(--brand); transition:width var(--dur) var(--ease-in); }
+.track .knob{ position:absolute; left:38%; top:50%; width:15px; height:15px; border-radius:999px; background:#fff; transform:translate(-50%,-50%); box-shadow:0 2px 10px rgba(0,0,0,.5),0 0 0 5px color-mix(in srgb,var(--brand) 30%,transparent); transition:width var(--dur) var(--ease-in), height var(--dur) var(--ease-in); }
+.track:hover .knob{ width:19px; height:19px; }
+.preview{ position:absolute; bottom:26px; left:38%; transform:translateX(-50%) scale(.92); width:132px; border-radius:10px; overflow:hidden; background:#000; border:1px solid rgba(255,255,255,.2); box-shadow:0 14px 30px -12px rgba(0,0,0,.9); opacity:0; pointer-events:none; transition:opacity var(--dur) var(--ease-in), transform var(--dur) var(--ease-emph); }
+.preview.show{ opacity:1; transform:translateX(-50%) scale(1); }
+.preview .thumb{ height:74px; position:relative; background:radial-gradient(70% 100% at 45% 35%,#6E92A8,#1B3746 60%,#0A1820); }
+.preview .thumb .subject{ position:absolute; left:52%; top:52%; width:52px; height:52px; transform:translate(-50%,-50%); background:radial-gradient(circle at 40% 38%,rgba(255,226,180,.85),rgba(240,166,60,.3) 46%,transparent 68%); }
+.preview .tc{ font-family:var(--font-mono); font-size:11px; color:#fff; text-align:center; padding:5px 0; background:rgba(0,0,0,.7); }
+.preview .fill{ position:absolute; inset:auto 0 0 0; height:2px; background:var(--brand); }
+.sheet{ position:absolute; right:10px; top:58px; z-index:12; width:230px; background:color-mix(in srgb,var(--surface) 94%,transparent); backdrop-filter:blur(16px) saturate(1.2); border:1px solid var(--border); border-radius:16px; padding:10px; box-shadow:var(--shadow-lift); transform-origin:top right; transform:scale(.92) translateX(8px); opacity:0; pointer-events:none; transition:transform var(--dur-slow) var(--ease-emph), opacity var(--dur) var(--ease-in); }
+.sheet.show{ transform:none; opacity:1; pointer-events:auto; }
+.sheet .st{ font-size:10px; font-family:var(--font-mono); color:var(--text-3); letter-spacing:.07em; margin:2px 4px 6px; text-transform:uppercase; }
+.sheet .srow{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 6px; border-radius:10px; cursor:pointer; transition:background-color var(--dur) var(--ease-in); }
+.sheet .srow:hover{ background:var(--surface-2); }
+.sheet .srow b{ font-size:12.5px; font-weight:500; }
+.sheet .seg-mini{ display:inline-flex; gap:8px; }
+.sheet .seg-mini .k{ font-size:11px; font-family:var(--font-mono); padding:2px 8px; border-radius:999px; color:var(--text-2); border:1px solid var(--border); cursor:pointer; transition:all var(--dur) var(--ease-in); }
+.sheet .seg-mini .k:hover{ border-color:var(--border-strong); }
+.sheet .seg-mini .k[aria-pressed="true"]{ background:var(--brand); color:var(--brand-ink); border-color:var(--brand); }
+.toast{ position:absolute; left:50%; top:44%; transform:translate(-50%,-50%) scale(.94); z-index:14; padding:12px 20px; border-radius:16px; background:rgba(0,0,0,.62); backdrop-filter:blur(8px); color:#fff; font-family:var(--font-mono); font-size:20px; font-weight:600; opacity:0; pointer-events:none; transition:opacity var(--dur) var(--ease-in), transform var(--dur) var(--ease-emph); }
+.toast.show{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+.toast small{ display:block; font-family:var(--font-ui); font-size:11px; font-weight:400; opacity:.7; text-align:center; margin-top:4px; }
+.play-note{ position:absolute; left:18px; bottom:60px; z-index:5; display:flex; gap:8px; flex-wrap:wrap; max-width:400px; }
+.tagchip{ font-size:10.5px; font-family:var(--font-mono); padding:4px 9px; border-radius:999px; background:color-mix(in srgb,#000 40%,transparent); border:1px solid rgba(255,255,255,.16); color:rgba(255,255,255,.86); }
+.panel{ background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:22px; }
+.swatches{ display:grid; grid-template-columns:repeat(auto-fill,minmax(154px,1fr)); gap:12px; }
+.sw{ border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+.sw .c{ height:62px; }
+.sw .m{ padding:9px 12px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sw .m b{ font-size:12.5px; font-weight:500; }
+.sw .m code{ font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); }
+.spec-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:18px; }
+.spec h4{ margin:0 0 14px; font-size:12px; font-family:var(--font-mono); letter-spacing:.06em; color:var(--text-3); text-transform:uppercase; }
+.type-row{ display:flex; align-items:baseline; gap:14px; padding:9px 0; border-bottom:1px dashed var(--border); }
+.type-row:last-child{ border-bottom:0; }
+.type-row .sample{ flex:1; min-width:0; color:var(--text); }
+.type-row .meta{ font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); white-space:nowrap; }
+.comp-row{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+.motion-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+.motion-table th, .motion-table td{ text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); }
+.motion-table th{ font-size:11px; font-family:var(--font-mono); color:var(--text-3); letter-spacing:.06em; text-transform:uppercase; font-weight:500; }
+.motion-table td code{ font-family:var(--font-mono); font-size:11px; color:var(--brand); }
+.motion-table tr:hover td{ background:var(--surface-2); }
+.legend{ display:flex; gap:18px; flex-wrap:wrap; margin-top:14px; font-size:11.5px; color:var(--text-3); }
+.legend i{ display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+
+/* ---------- 通用补丁 ---------- */
+.empty.hide,.hintbar.hide,.probe-ok.hide,.poster.hide{ display:none; }
+.hl{ color:var(--brand); font-weight:600; }
+
+/* ---------- ① 搜索 ---------- */
+.hintbar{ margin:0 16px 10px; display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:12px; font-size:11.5px; line-height:1.5;
+  color:var(--warning); background:color-mix(in srgb,var(--warning) 13%,transparent); border:1px solid color-mix(in srgb,var(--warning) 32%,transparent); }
+.searchchips{ display:flex; gap:8px; flex-wrap:wrap; }
+.grid2{ display:grid; grid-template-columns:repeat(2,1fr); gap:16px 12px; padding:2px 16px 16px; }
+.grid2 .poster{ width:auto; }
+.empty{ padding:44px 26px; text-align:center; }
+.empty b{ display:block; font-size:14px; font-weight:600; color:var(--text-2); margin-bottom:7px; }
+.empty p{ margin:0; font-size:11.5px; line-height:1.65; color:var(--text-3); }
+
+/* ---------- ⑧ 详情页 ---------- */
+.detailhero{ position:relative; height:212px; flex:none; }
+.detailhero .art{ position:absolute; inset:0; }
+.detailhero::after{ content:""; position:absolute; inset:0; pointer-events:none;
+  background:linear-gradient(180deg,rgba(0,0,0,.34) 0,rgba(0,0,0,0) 32%,color-mix(in srgb,var(--bg) 84%,transparent) 76%,var(--bg) 100%); }
+.detailhero .back{ position:absolute; top:12px; left:14px; z-index:3; color:#fff; background:color-mix(in srgb,#000 38%,transparent); }
+.detailhero .meta{ position:absolute; left:16px; right:16px; bottom:12px; z-index:3; }
+.detailhero .meta h3{ margin:0; font-size:21px; font-weight:600; color:#fff; text-shadow:0 2px 12px rgba(0,0,0,.6); }
+.detailhero .facts{ display:flex; gap:7px; flex-wrap:wrap; margin-top:9px; }
+.fact{ font-size:10.5px; font-family:var(--font-mono); padding:3px 8px; border-radius:999px; background:color-mix(in srgb,#000 46%,transparent); border:1px solid rgba(255,255,255,.18); color:rgba(255,255,255,.9); }
+.detailbody{ padding:16px 16px 18px; display:flex; flex-direction:column; gap:16px; }
+.actionrow{ display:flex; gap:10px; align-items:center; }
+.actionrow .btn{ flex:1; height:46px; font-size:14.5px; }
+.iconbtn-lg{ flex:none; width:46px; height:46px; border-radius:15px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); display:grid; place-items:center; cursor:pointer;
+  transition:transform var(--dur-fast) var(--ease-in), color var(--dur) var(--ease-in), border-color var(--dur) var(--ease-in), background-color var(--dur) var(--ease-in); }
+.iconbtn-lg svg{ width:20px; height:20px; }
+.iconbtn-lg:active{ transform:scale(.93); }
+.iconbtn-lg.on{ color:var(--brand); border-color:color-mix(in srgb,var(--brand) 46%,transparent); background:var(--brand-soft); }
+.ep-row{ display:flex; gap:11px; padding:11px 14px; align-items:center; cursor:pointer; transition:background-color var(--dur) var(--ease-in); }
+.ep-row + .ep-row{ border-top:1px solid var(--border); }
+.ep-row:hover{ background:var(--surface-2); }
+.ep-thumb{ position:relative; flex:none; width:76px; height:43px; border-radius:9px; overflow:hidden; }
+.ep-thumb .bar{ position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(255,255,255,.3); }
+.ep-thumb .bar i{ display:block; height:100%; background:var(--brand); }
+.ep-row .tx{ flex:1; min-width:0; }
+.ep-row .tx b{ display:block; font-size:13px; font-weight:500; }
+.ep-row .tx p{ margin:3px 0 0; font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); }
+.ep-row .tick{ color:var(--brand); font-size:13px; }
+.tech-table{ width:100%; border-collapse:collapse; font-size:12px; }
+.tech-table td{ padding:8px 0; border-bottom:1px dashed var(--border); color:var(--text); }
+.tech-table td:first-child{ width:42%; color:var(--text-3); font-family:var(--font-mono); font-size:11px; }
+.tech-table tr:last-child td{ border-bottom:0; }
+
+/* ---------- ⑨ 竖屏播放 ---------- */
+.player.portrait{ flex:none; height:190px; }
+.player.portrait .ctl-top{ padding:10px 14px; }
+.player.portrait .ctl-mid{ gap:22px; }
+.player.portrait .ctl-round.m{ width:50px; height:50px; }
+.player.portrait .ctl-round.s{ width:38px; height:38px; }
+.player.portrait .ctl-bottom{ padding:0 14px 10px; }
+.player.portrait .preview{ bottom:22px; width:120px; }
+.player.portrait .preview .thumb{ height:66px; }
+.portrait-info{ flex:1; overflow-y:auto; padding:14px 16px 18px; display:flex; flex-direction:column; gap:13px; scrollbar-width:none; }
+.portrait-info::-webkit-scrollbar{ display:none; }
+.portrait-info h3{ margin:0; font-size:17px; font-weight:600; }
+.portrait-info .facts{ display:flex; gap:7px; flex-wrap:wrap; }
+.fact2{ font-size:10.5px; font-family:var(--font-mono); padding:3px 8px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); color:var(--text-2); }
+.nextup{ display:flex; gap:11px; align-items:center; padding:11px 12px; border-radius:14px; background:var(--surface); border:1px solid var(--border); cursor:pointer;
+  transition:transform var(--dur-fast) var(--ease-in), border-color var(--dur) var(--ease-in); }
+.nextup:hover{ border-color:var(--border-strong); transform:translateY(-2px); }
+.nextup .n{ flex:none; width:27px; height:27px; border-radius:999px; background:var(--brand-soft); color:var(--brand); display:grid; place-items:center; font-family:var(--font-mono); font-size:12px; }
+.nextup svg{ width:16px; height:16px; color:var(--text-3); }
+
+/* ---------- ⑩ 排序 / 筛选弹层 ---------- */
+.scrim{ position:absolute; inset:0; z-index:11; background:rgba(0,0,0,.58); opacity:0; pointer-events:none; transition:opacity var(--dur-slow) var(--ease-in); }
+.scrim.show{ opacity:1; pointer-events:auto; }
+.bottomsheet{ position:absolute; left:0; right:0; bottom:0; z-index:12; max-height:90%; overflow-y:auto; padding:10px 16px 18px; scrollbar-width:none;
+  background:var(--surface); border-top:1px solid var(--border); border-radius:22px 22px 0 0; box-shadow:var(--shadow-lift);
+  transform:translateY(104%); transition:transform var(--dur-slow) var(--ease-emph); }
+.bottomsheet::-webkit-scrollbar{ display:none; }
+.bottomsheet.show{ transform:none; }
+.bottomsheet .grab{ width:40px; height:4px; border-radius:999px; background:var(--surface-3); margin:0 auto 13px; }
+.bs-head{ display:flex; align-items:center; margin-bottom:4px; }
+.bs-head b{ font-size:16px; font-weight:600; }
+.bs-head .reset{ margin-left:auto; font-size:12px; color:var(--text-2); cursor:pointer; transition:color var(--dur) var(--ease-in); }
+.bs-head .reset:hover{ color:var(--brand); }
+.bs-sec{ font-size:10.5px; font-family:var(--font-mono); letter-spacing:.07em; color:var(--text-3); text-transform:uppercase; margin:14px 0 9px; }
+.bs-grid{ display:flex; flex-wrap:wrap; gap:8px; }
+.bs-opt{ font-size:12.5px; font-family:var(--font-ui); padding:8px 13px; border-radius:999px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-2); cursor:pointer;
+  transition:background-color var(--dur) var(--ease-in), color var(--dur) var(--ease-in), border-color var(--dur) var(--ease-in), transform var(--dur-fast) var(--ease-in); }
+.bs-opt:active{ transform:scale(.94); }
+.bs-opt[aria-pressed="true"]{ background:var(--brand-soft); color:var(--brand); border-color:color-mix(in srgb,var(--brand) 46%,transparent); }
+.orderrow{ display:flex; align-items:center; gap:10px; margin-top:11px; font-size:12px; color:var(--text-2); }
+.orderrow .val{ font-family:var(--font-mono); font-size:11.5px; color:var(--text-3); }
+.filterbtn{ position:absolute; right:14px; bottom:16px; z-index:8; display:inline-flex; align-items:center; gap:7px; height:44px; padding:0 15px; border-radius:999px; cursor:pointer;
+  border:1px solid var(--border); background:color-mix(in srgb,var(--surface) 92%,transparent); backdrop-filter:blur(12px); color:var(--text); font-family:var(--font-ui); font-size:13px; font-weight:500;
+  box-shadow:var(--shadow-card); transition:transform var(--dur-fast) var(--ease-in), border-color var(--dur) var(--ease-in); }
+.filterbtn:hover{ border-color:var(--border-strong); }
+.filterbtn:active{ transform:scale(.96); }
+.filterbtn svg{ width:16px; height:16px; color:var(--text-2); }
+.badge{ display:inline-grid; place-items:center; min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:var(--brand); color:var(--brand-ink); font-size:10.5px; font-family:var(--font-mono); font-weight:600; }
+
+/* ---------- ⑪ 测试连接 ---------- */
+.probe-ok{ display:flex; align-items:center; gap:11px; padding:12px 13px; border-radius:14px;
+  background:color-mix(in srgb,var(--success) 12%,var(--surface)); border:1px solid color-mix(in srgb,var(--success) 36%,transparent); }
+.probe-ok .ic{ flex:none; width:30px; height:30px; border-radius:10px; display:grid; place-items:center; background:color-mix(in srgb,var(--success) 20%,transparent); color:var(--success); }
+.probe-ok .ic svg{ width:17px; height:17px; }
+.probe-ok b{ font-size:13px; }
+.probe-ok p{ margin:3px 0 0; font-size:11px; color:var(--text-3); font-family:var(--font-mono); }
+.btn-testing{ pointer-events:none; opacity:.8; }
+
+/* ---------- ⑫ 错误与降级 ---------- */
+.toastline{ position:absolute; left:14px; right:14px; top:14px; z-index:13; display:flex; align-items:center; gap:9px; padding:10px 13px; border-radius:13px; font-size:12px; color:var(--text);
+  background:color-mix(in srgb,var(--warning) 16%,var(--surface)); border:1px solid color-mix(in srgb,var(--warning) 40%,transparent); box-shadow:var(--shadow-card); }
+.toastline svg{ width:16px; height:16px; color:var(--warning); flex:none; }
+.errcard{ position:absolute; inset:0; z-index:12; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:12px; padding:30px 30px 26px;
+  background:color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter:blur(10px); }
+.errcard .ic{ width:56px; height:56px; border-radius:18px; display:grid; place-items:center; color:var(--danger);
+  background:color-mix(in srgb,var(--danger) 15%,transparent); border:1px solid color-mix(in srgb,var(--danger) 38%,transparent); }
+.errcard .ic svg{ width:28px; height:28px; }
+.errcard b{ font-size:16px; font-weight:600; }
+.errcard p{ margin:0; font-size:12px; color:var(--text-2); line-height:1.65; }
+.errcard code{ font-family:var(--font-mono); font-size:11px; color:var(--danger); }
+.errcard .acts{ display:flex; gap:10px; width:100%; margin-top:8px; }
+.errcard .acts .btn{ height:44px; font-size:14px; }
+
+/* ---------- ⑬ 冷却与生物识别 ---------- */
+.pattern.dim{ opacity:.32; filter:grayscale(1); pointer-events:none; }
+.lock-sub{ font-size:11px; color:var(--text-3); font-family:var(--font-mono); text-align:center; line-height:1.6; }
+.bio-btn{ display:inline-flex; align-items:center; gap:8px; }
+.bio-btn svg{ width:16px; height:16px; }
+
+/* ---------- ⑭ 平板 ---------- */
+.device.tablet{ width:648px; height:436px; border-radius:26px; padding:12px; }
+.device.tablet .screen{ flex-direction:row; border-radius:20px; }
+.trailnav{ flex:none; width:104px; padding:14px 10px; display:flex; flex-direction:column; gap:5px;
+  border-right:1px solid var(--border); background:color-mix(in srgb,var(--surface) 55%,transparent); }
+.trailnav .grp{ font-size:9.5px; font-family:var(--font-mono); letter-spacing:.1em; color:var(--text-3); text-transform:uppercase; margin:9px 6px 3px; }
+.trailnav .nit{ display:flex; align-items:center; gap:8px; width:100%; padding:9px 10px; border:0; border-radius:12px; cursor:pointer; text-align:left;
+  background:transparent; color:var(--text-2); font-family:var(--font-ui); font-size:12.5px; transition:background-color var(--dur) var(--ease-in), color var(--dur) var(--ease-in); }
+.trailnav .nit:hover{ background:var(--surface-2); color:var(--text); }
+.trailnav .nit[aria-current="page"]{ background:var(--brand-soft); color:var(--brand); }
+.trailnav .nit svg{ width:17px; height:17px; flex:none; }
+.tablet-main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.grid4{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px 12px; padding:2px 18px 18px; }
+.grid4 .poster{ width:auto; }
+</style>
+</head>
+<body>
+<header class="board-head">
+  <div class="brand-lock">
+    <div class="mark"><img src="assets/limeplayer-app-icon.jpg" alt="LimePlayer" /></div>
+    <div><h1>青柠 LimePlayer</h1><p>Lime Video Player · UI Board</p></div>
+  </div>
+  <div class="head-tools">
+    <span class="lbl">THEME</span>
+    <div class="seg" id="themeSeg" role="group" aria-label="主题">
+      <span class="ind"></span>
+      <button data-theme-set="system">跟随系统</button>
+      <button data-theme-set="light">亮色</button>
+      <button data-theme-set="dark" aria-pressed="true">暗色</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="section-title"><h2>屏幕原型</h2><span>SCREENS</span><div class="rule"></div></div>
+  <section class="frames">
+
+    <!-- ① 多库浏览 -->
+    <div class="frame-wrap reveal" style="animation-delay:0ms">
+      <div class="frame-cap"><b>多库浏览</b><i>Home · Multi-Library</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar">
+            <div class="t"><h3>媒体库</h3><p>客厅 NAS · 飞牛影视</p></div>
+            <button class="icon-btn" aria-label="搜索"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.3-3.3"/></svg></button>
+            <button class="icon-btn" aria-label="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/></svg></button>
+          </div>
+          <div class="chips">
+            <button class="chip" aria-pressed="true">全部</button>
+            <button class="chip">电影</button>
+            <button class="chip">剧集</button>
+            <button class="chip">动漫</button>
+            <button class="chip">纪录片</button>
+          </div>
+          <div class="scroll">
+            <div class="block-head"><b>继续观看</b><span class="count">3</span></div>
+            <div class="resume">
+              <div class="big">
+                <div class="g g1" style="position:absolute;inset:0"></div>
+                <div class="play"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+                <div class="meta"><b>沙丘：第二部</b><p>剩余 1:12:04</p>
+                  <div class="progress"><div class="buf"></div><div class="done"></div><div class="knob"></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="block-head"><b>电影</b><span class="count">128</span><span class="more">全部 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="rail">
+              <div class="poster"><div class="art"><div class="g g1"></div><span class="rate">8.7</span></div><div class="cap"><b>星际穿越</b><i>2014 · 169min</i></div></div>
+              <div class="poster"><div class="art"><div class="g g2"></div><span class="rate">8.1</span></div><div class="cap"><b>奥本海默</b><i>2023 · 180min</i></div></div>
+              <div class="poster"><div class="art"><div class="g g3"></div><span class="rate">7.9</span></div><div class="cap"><b>沙丘</b><i>2021 · 155min</i></div></div>
+              <div class="poster"><div class="art"><div class="g g5"></div><span class="rate">8.4</span></div><div class="cap"><b>降临</b><i>2016 · 116min</i></div></div>
+            </div>
+            <div class="block-head"><b>剧集</b><span class="count">42</span><span class="more">全部 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="rail">
+              <div class="poster"><div class="art"><div class="g g4"></div><span class="ep">S2 · 第 4 集</span></div><div class="cap"><b>三体</b><i>更新至 S2E4</i></div></div>
+              <div class="poster"><div class="art"><div class="g g6"></div><span class="ep">S1 · 第 8 集</span></div><div class="cap"><b>基地</b><i>更新至 S1E8</i></div></div>
+              <div class="poster"><div class="art"><div class="g g7"></div><span class="ep">S3 · 第 1 集</span></div><div class="cap"><b>继承之战</b><i>全 39 集</i></div></div>
+              <div class="poster"><div class="art"><div class="g g8"></div><span class="ep">S1 · 第 2 集</span></div><div class="cap"><b>辐射</b><i>更新至 S1E2</i></div></div>
+            </div>
+            <div class="block-head"><b>动漫</b><span class="count">76</span><span class="more">全部 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            <div class="rail">
+              <div class="poster"><div class="art"><div class="g g3"></div><span class="rate">9.1</span></div><div class="cap"><b>葬送的芙莉莲</b><i>全 28 集</i></div></div>
+              <div class="poster"><div class="art"><div class="g g1"></div><span class="rate">8.8</span></div><div class="cap"><b>进击的巨人</b><i>全 87 集</i></div></div>
+            </div>
+            <div style="height:14px"></div>
+          </div>
+          <div class="bottomnav">
+            <button class="item" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg><span>首页</span></button>
+            <button class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg><span>媒体库</span></button>
+            <button class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.3-3.3"/></svg><span>搜索</span></button>
+            <button class="item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg><span>设置</span></button>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ② 九宫格锁屏 -->
+    <div class="frame-wrap reveal" style="animation-delay:80ms">
+      <div class="frame-cap"><b>九宫格锁屏</b><i>Pattern Lock</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="lockwrap">
+            <div class="veil"></div>
+            <div class="lock-mark">C</div>
+            <div class="lock-title"><b>绘制解锁图案</b><p id="lockHint">连接至少 4 个点</p></div>
+            <div class="pattern" id="pattern">
+              <svg viewBox="0 0 236 236"><polyline id="trail" fill="none" stroke="var(--brand)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" points=""/></svg>
+              <span class="dot" data-i="0" style="left:18%;top:18%"><i></i></span>
+              <span class="dot" data-i="1" style="left:50%;top:18%"><i></i></span>
+              <span class="dot" data-i="2" style="left:82%;top:18%"><i></i></span>
+              <span class="dot" data-i="3" style="left:18%;top:50%"><i></i></span>
+              <span class="dot" data-i="4" style="left:50%;top:50%"><i></i></span>
+              <span class="dot" data-i="5" style="left:82%;top:50%"><i></i></span>
+              <span class="dot" data-i="6" style="left:18%;top:82%"><i></i></span>
+              <span class="dot" data-i="7" style="left:50%;top:82%"><i></i></span>
+              <span class="dot" data-i="8" style="left:82%;top:82%"><i></i></span>
+            </div>
+            <div class="lock-ok" id="lockOk">✓ 图案正确，正在解锁</div>
+            <button class="mini-btn" id="lockReplay">重绘演示</button>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 添加服务器 · 选源 -->
+    <div class="frame-wrap reveal" style="animation-delay:160ms">
+      <div class="frame-cap"><b>添加服务器 · 选源</b><i>Add Server · Step 1/2</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <div class="t"><h3>添加服务器</h3><p>选择媒体源类型</p></div>
+          </div>
+          <div class="steps"><i class="on"></i><i></i></div>
+          <div class="source-grid">
+            <button class="source-card">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><circle cx="7" cy="7.5" r="1"/><circle cx="7" cy="16.5" r="1"/></svg></span>
+              <span class="tx"><b>Emby</b><p>用 Emby 账号密码登录</p></span>
+              <span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 6l6 6-6 6"/></svg></span>
+            </button>
+            <button class="source-card">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 8v8a3 3 0 0 0 3 3h12a3 3 0 0 0 3-3V8"/><path d="M6 8V6a3 3 0 0 1 3-3h6a3 3 0 0 1 3 3v2"/><path d="M8 12h8"/></svg></span>
+              <span class="tx"><b>飞牛影视</b><p>影视账号 + 密码登录</p></span>
+              <span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M9 6l6 6-6 6"/></svg></span>
+            </button>
+            <button class="source-card" style="opacity:.55;cursor:default">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 10l5 3-5 3z"/></svg></span>
+              <span class="tx"><b>本机视频 <span class="badge-soon">后期 L2</span></b><p>扫描手机本地文件</p></span>
+            </button>
+          </div>
+          <div style="flex:1"></div>
+          <div class="formpad" style="padding-top:0">
+            <p class="hintline">M4 阶段飞牛仅提供「账号密码」登录；NAS 授权 / 扫码 / 一次性授权码属后期迭代 L1，此处不做入口。</p>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ④ 登录 · 账号密码 -->
+    <div class="frame-wrap reveal" style="animation-delay:240ms">
+      <div class="frame-cap"><b>登录 · 账号密码</b><i>Sign in · Step 2/2</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <div class="t"><h3>登录飞牛影视</h3><p>连接你的 NAS</p></div>
+          </div>
+          <div class="steps"><i class="on"></i><i class="on"></i></div>
+          <div class="formpad">
+            <div class="field"><label>服务器地址</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+              <input value="192.168.1.10:8005" /></div></div>
+            <div class="field"><label>影视账号</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+              <input value="family" /></div></div>
+            <div class="field"><label>密码</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <input type="password" value="password" />
+              <button class="toggle-eye" aria-label="显示密码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/></svg></button></div></div>
+            <label class="tarow" style="cursor:pointer"><input type="checkbox" checked style="accent-color:var(--brand);width:16px;height:16px" /><span style="font-size:12.5px;color:var(--text-2)">记住此服务器</span></label>
+            <button class="btn btn-primary" id="loginBtn">登录</button>
+            <p class="hintline">凭据仅加密保存在本机（Android Keystore），不上传；支持 HTTP / 自签证书地址。</p>
+          </div>
+          <div class="loading-veil hide" id="loginVeil">
+            <div class="big-spin"></div>
+            <b>正在验证凭据…</b>
+            <p>正在连接 192.168.1.10:8005</p>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 设置页 -->
+    <div class="frame-wrap reveal" style="animation-delay:320ms">
+      <div class="frame-cap"><b>设置页</b><i>Settings</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar"><div class="t" style="padding-left:6px"><h3>设置</h3></div></div>
+          <div class="scroll">
+            <div class="grouplabel">外观</div>
+            <div class="group">
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg></span>
+                <span class="tx"><b>主题</b><p>跟随系统 · 亮色 · 暗色</p></span>
+                <span class="inline-seg" id="themeInline"><span class="gl"></span><button aria-pressed="true">系统</button><button>亮</button><button>暗</button></span>
+              </div>
+            </div>
+
+            <div class="grouplabel">播放</div>
+            <div class="group">
+              <div class="row" id="playExpand">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 5v14l11-7z"/></svg></span>
+                <span class="tx"><b>默认倍速</b><p>全局生效，无需每次调整</p></span>
+                <span class="val" id="speedVal">1.0×</span>
+                <span class="chev" id="speedChev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span>
+              </div>
+              <div class="expander" id="speedExpander">
+                <div class="row" style="cursor:default">
+                  <span class="tx" style="padding-left:46px"><b style="font-size:13px">选择倍速</b></span>
+                  <span class="inline-seg" id="speedInline" style="margin-left:auto"><span class="gl"></span><button aria-pressed="true">1.0×</button><button>1.25×</button><button>1.5×</button><button>2.0×</button></span>
+                </div>
+              </div>
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 1 1 3 6.2"/><path d="M4 12H8l-4-4z"/></svg></span>
+                <span class="tx"><b>自动续播</b><p>记住进度，下次从上次位置开始</p></span>
+                <span class="switch" role="switch" aria-checked="true" data-switch><i></i></span>
+              </div>
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></span>
+                <span class="tx"><b>后台自动暂停</b><p>进入最近任务 / 失焦时暂停</p></span>
+                <span class="switch" role="switch" aria-checked="true" data-switch><i></i></span>
+              </div>
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg></span>
+                <span class="tx"><b>硬件解码优先</b><p>不兼容时自动回退软解</p></span>
+                <span class="switch" role="switch" aria-checked="true" data-switch><i></i></span>
+              </div>
+            </div>
+
+            <div class="grouplabel">手势与交互</div>
+            <div class="group">
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h6l-3-3zM19 12h-6l3 3z"/></svg></span>
+                <span class="tx"><b>双击快进 / 快退</b><p>左右双击跳转秒数</p></span>
+                <span class="val">10s</span>
+                <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+              </div>
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="2.2"/><path d="M12 3v6M12 15v6M3 12h6M15 12h6"/></svg></span>
+                <span class="tx"><b>亮度 / 音量手势</b><p>左右半屏分别调节</p></span>
+                <span class="switch" role="switch" aria-checked="true" data-switch><i></i></span>
+              </div>
+            </div>
+
+            <div class="grouplabel">安全</div>
+            <div class="group">
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 11V8a6 6 0 0 1 12 0v3"/><rect x="5" y="11" width="14" height="9" rx="2"/></svg></span>
+                <span class="tx"><b>应用锁</b><p>九宫格图案锁，打开 App 时校验</p></span>
+                <span class="switch" role="switch" aria-checked="true" data-switch><i></i></span>
+              </div>
+              <div class="row">
+                <span class="tx" style="padding-left:46px"><b>修改解锁图案</b></span>
+                <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+              </div>
+            </div>
+
+            <div class="grouplabel">媒体源</div>
+            <div class="group">
+              <div class="row">
+                <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg></span>
+                <span class="tx"><b>服务器管理</b><p>客厅 NAS（飞牛影视）· 2 个源</p></span>
+                <span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span>
+              </div>
+            </div>
+
+            <div class="grouplabel">关于</div>
+            <div class="group">
+              <div class="row"><span class="tx" style="padding-left:6px"><b>版本</b></span><span class="val">1.0.0 (M5)</span></div>
+              <div class="row"><span class="tx" style="padding-left:6px"><b>开源许可声明</b></span><span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></span></div>
+            </div>
+            <div style="height:16px"></div>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑥ 横屏播放 -->
+    <div class="frame-wrap reveal" style="animation-delay:400ms">
+      <div class="frame-cap"><b>横屏播放</b><i>Landscape Player · Seek 预览</i></div>
+      <div class="device landscape">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="player">
+            <div class="film"></div>
+            <div class="subject"></div>
+            <div class="play-note">
+              <span class="tagchip">直放优先 · 拖动不卡顿</span>
+              <span class="tagchip">trickplay 实时预览</span>
+            </div>
+            <div class="controls" id="controls">
+              <div class="ctl-top">
+                <button class="ctl-btn" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+                <div class="t"><b>沙丘：第二部</b><p>4K HDR · 直连 · 音轨 2/3</p></div>
+                <button class="ctl-btn setting" id="settingBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" width="16" height="16"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>设置</button>
+                <button class="ctl-btn" aria-label="画中画"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="6" height="5" rx="1"/></svg></button>
+              </div>
+              <div class="ctl-mid">
+                <button class="ctl-round s" aria-label="后退 10 秒"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5a7 7 0 1 1-6.2 3.8"/><path d="M12 5V2M9 4l3 1 3-1"/></svg></button>
+                <button class="ctl-round m" id="playBtn" aria-label="播放 / 暂停"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M8 5v14l11-7z"/></svg></button>
+                <button class="ctl-round s" aria-label="快进 10 秒"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5a7 7 0 1 0 6.2 3.8"/><path d="M12 5V2M9 4l3 1 3-1"/></svg></button>
+              </div>
+              <div class="ctl-bottom">
+                <div class="ctl-times">
+                  <span id="tCur">52:18</span>
+                  <span class="right">
+                    <span class="pill hot" id="speedPill">1.5× 全局</span>
+                    <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h8M7 14h5"/></svg>字幕</span>
+                    <span class="pill"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 9v6M8 7v10M12 5v14M16 7v10M20 9v6"/></svg>音轨</span>
+                    <span id="tDur">2:46:00</span>
+                  </span>
+                </div>
+                <div class="track" id="track">
+                  <div class="buf"></div><div class="done" id="done"></div><div class="knob" id="knob"></div>
+                  <div class="preview" id="preview">
+                    <div class="thumb"><div class="subject"></div></div>
+                    <div class="tc" id="previewTc">52:18</div>
+                    <div class="fill"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="sheet" id="sheet">
+              <div class="st">播放设置</div>
+              <div class="srow"><b>倍速</b><span class="seg-mini" id="sheetSpeed"><span class="k">1.0×</span><span class="k">1.25×</span><span class="k" aria-pressed="true">1.5×</span><span class="k">2.0×</span></span></div>
+              <div class="srow"><b>画面比例</b><span class="seg-mini" id="sheetRatio"><span class="k" aria-pressed="true">适应</span><span class="k">填充</span><span class="k">原始</span></span></div>
+              <div class="srow"><b>字幕</b><span style="font-size:12px;font-family:var(--font-mono);color:var(--text-2)">中文 · 简体</span></div>
+              <div class="srow"><b>音频</b><span style="font-size:12px;font-family:var(--font-mono);color:var(--text-2)">国语 5.1</span></div>
+              <div class="srow"><b>跳过片头</b><span class="switch" role="switch" aria-checked="true" data-switch style="width:40px;height:23px"><i></i></span></div>
+            </div>
+            <div class="toast" id="toast">1.5×<small>全局倍速已生效</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑦ 搜索 · 中文友好 -->
+    <div class="frame-wrap reveal" style="animation-delay:480ms">
+      <div class="frame-cap"><b>搜索 · 中文友好</b><i>Search · Instant</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <div class="t"><h3>搜索</h3><p id="searchHint">输入即搜 · 支持中文子串 / 拼音全拼 / 首字母</p></div>
+          </div>
+          <div class="formpad" style="padding:0 16px 12px;gap:12px">
+            <div class="field">
+              <div class="box">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.3-3.3"/></svg>
+                <input id="searchInput" value="三" autocomplete="off" spellcheck="false" />
+                <button class="toggle-eye" id="searchClear" aria-label="清空"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+              </div>
+            </div>
+            <div class="searchchips" id="searchChips">
+              <button class="chip">三体</button>
+              <button class="chip">santi</button>
+              <button class="chip">st</button>
+              <button class="chip">沙丘</button>
+            </div>
+          </div>
+          <div class="scroll">
+            <div class="hintbar" id="searchBar">本地索引仍在构建（12%）· 结果可能不全，已用服务端搜索兜底</div>
+            <div class="block-head"><b>匹配结果</b><span class="count" id="searchCount">2</span></div>
+            <div class="grid2" id="searchResults">
+              <div class="poster" data-k="三体 电视剧 santi st san ti 3t"><div class="art"><div class="g g4"></div><span class="ep">S2 · 第 4 集</span></div><div class="cap"><b><span class="hl">三</span>体</b><i>更新至 S2E4</i></div></div>
+              <div class="poster" data-k="三体 动画 santi st san ti donghua"><div class="art"><div class="g g3"></div><span class="rate">9.1</span></div><div class="cap"><b><span class="hl">三</span>体 · 动画版</b><i>全 15 集</i></div></div>
+              <div class="poster" data-k="沙丘 dune sha qiu sq"><div class="art"><div class="g g2"></div><span class="rate">8.4</span></div><div class="cap"><b>沙丘</b><i>2021 · 155min</i></div></div>
+              <div class="poster" data-k="星际穿越 interstellar xing ji chuan yue xjc"><div class="art"><div class="g g1"></div><span class="rate">9.4</span></div><div class="cap"><b>星际穿越</b><i>2014 · 169min</i></div></div>
+            </div>
+            <div class="empty hide" id="searchEmpty">
+              <b>没有找到匹配内容</b>
+              <p>支持中文任意位置子串、拼音全拼（santi）与首字母（st）。<br/>若为服务器源，请确认服务端搜索已开启。</p>
+            </div>
+            <div style="height:14px"></div>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑧ 详情页 -->
+    <div class="frame-wrap reveal" style="animation-delay:560ms">
+      <div class="frame-cap"><b>详情页</b><i>Detail · Continue</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="scroll">
+            <div class="detailhero">
+              <div class="art g g1"></div>
+              <button class="icon-btn back" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+              <div class="meta">
+                <h3>沙丘：第二部</h3>
+                <div class="facts">
+                  <span class="fact">8.7</span><span class="fact">2024</span><span class="fact">2h46m</span><span class="fact">PG-13</span><span class="fact">4K HDR</span>
+                </div>
+              </div>
+            </div>
+            <div class="detailbody">
+              <div class="actionrow">
+                <button class="btn btn-primary"><svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M8 5v14l11-7z"/></svg>继续播放 · 剩 1:12:04</button>
+                <button class="iconbtn-lg" id="favBtn" aria-label="收藏"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 20s-7-4.4-7-9.2A4 4 0 0 1 12 8a4 4 0 0 1 7 2.8C19 15.6 12 20 12 20z"/></svg></button>
+                <button class="iconbtn-lg" aria-label="标记已看"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>
+              </div>
+              <p class="hintline" style="margin:0">保罗·厄崔迪与契妮及弗雷曼人联手，向背叛他家族的敌人复仇。他必须在自己挚爱与已知宇宙的命运之间做出抉择。</p>
+              <div>
+                <div class="block-head" style="padding:0 0 9px"><b>剧集</b><span class="count">第 2 季 · 8 集</span></div>
+                <div class="group" style="margin:0">
+                  <div class="ep-row">
+                    <div class="ep-thumb"><div class="g g1" style="position:absolute;inset:0"></div><div class="bar"><i style="width:100%"></i></div></div>
+                    <div class="tx"><b>第 2 集 · 沙之信条</b><p>44:02 · 已看完</p></div>
+                    <span class="tick">✓</span>
+                  </div>
+                  <div class="ep-row">
+                    <div class="ep-thumb"><div class="g g5" style="position:absolute;inset:0"></div><div class="bar"><i style="width:18%"></i></div></div>
+                    <div class="tx"><b>第 3 集 · 风暴之眼</b><p>41:30 · 剩 34:04</p></div>
+                    <span class="tick">▶</span>
+                  </div>
+                  <div class="ep-row">
+                    <div class="ep-thumb"><div class="g g6" style="position:absolute;inset:0"></div><div class="bar"><i style="width:0"></i></div></div>
+                    <div class="tx"><b>第 4 集 · 深处</b><p>42:16 · 未观看</p></div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="block-head" id="techHead" style="padding:0 0 9px;cursor:pointer"><b>技术信息</b><span class="count">排查「为什么播不了」</span><span class="more">展开 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></div>
+                <div class="expander" id="techExpander">
+                  <div class="group" style="margin:0"><div style="padding:8px 14px 12px">
+                    <table class="tech-table">
+                      <tr><td>容器</td><td>mkv</td></tr>
+                      <tr><td>视频</td><td>hevc Main10 · 3840×2160 · 23.976fps</td></tr>
+                      <tr><td>音频</td><td>dts-hd ma 7.1 · 需软解</td></tr>
+                      <tr><td>字幕</td><td>内嵌 ass · 外挂 srt</td></tr>
+                      <tr><td>码率</td><td>42.6 Mbps</td></tr>
+                      <tr><td>文件大小</td><td>52.4 GB</td></tr>
+                      <tr><td>协商结果</td><td>直放（服务端未开转码）</td></tr>
+                    </table>
+                  </div></div>
+                </div>
+              </div>
+              <div class="searchchips">
+                <button class="chip">科幻</button><button class="chip">冒险</button><button class="chip">蒂莫西·柴勒梅德</button>
+              </div>
+            </div>
+            <div style="height:18px"></div>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑨ 竖屏播放 -->
+    <div class="frame-wrap reveal" style="animation-delay:640ms">
+      <div class="frame-cap"><b>竖屏播放</b><i>Portrait Player</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="player portrait">
+            <div class="film"></div>
+            <div class="subject"></div>
+            <div class="controls">
+              <div class="ctl-top">
+                <button class="ctl-btn" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+                <div class="t"><b>沙丘：第二部 · 第 4 集</b><p>直放 · 音轨 2/3</p></div>
+                <button class="ctl-btn" aria-label="锁定"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
+              </div>
+              <div class="ctl-mid">
+                <button class="ctl-round s" aria-label="后退 10 秒"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5a7 7 0 1 1-6.2 3.8"/><path d="M12 5V2M9 4l3 1 3-1"/></svg></button>
+                <button class="ctl-round m" id="p2play" aria-label="播放 / 暂停"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+                <button class="ctl-round s" aria-label="快进 10 秒"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 5a7 7 0 1 0 6.2 3.8"/><path d="M12 5V2M9 4l3 1 3-1"/></svg></button>
+              </div>
+              <div class="ctl-bottom">
+                <div class="ctl-times">
+                  <span>52:18</span>
+                  <span class="right"><span class="pill hot">1.5× 全局</span><span>2:46:00</span></span>
+                </div>
+                <div class="track" id="p2track">
+                  <div class="buf"></div><div class="done" id="p2done" style="width:38%"></div><div class="knob" id="p2knob" style="left:38%"></div>
+                  <div class="preview" id="p2preview"><div class="thumb"><div class="subject"></div></div><div class="tc" id="p2tc">52:18</div><div class="fill"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="portrait-info">
+            <h3>第 4 集 · 深处</h3>
+            <div class="facts"><span class="fact2">42:16</span><span class="fact2">hevc · dts-hd</span><span class="fact2">今天 20:14 更新</span></div>
+            <p class="hintline" style="margin:0">保罗与契妮深入南方腹地，厄拉科斯的沙暴正逼近他们最后的据点。</p>
+            <div class="nextup">
+              <span class="n">5</span>
+              <div style="flex:1;min-width:0"><b style="font-size:13px">下一集 · 预言</b><p style="margin:3px 0 0;font-size:10.5px;color:var(--text-3);font-family:var(--font-mono)">10 秒后自动播放 · 点此取消</p></div>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+            </div>
+            <div class="facts"><span class="fact2">手势 · 亮度 45%</span><span class="fact2">手势 · 音量 72%</span></div>
+            <p class="hintline" style="margin:0">旋转手机自动切横屏；旋转不会重建播放器，进度与选择都不丢。</p>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑩ 排序与筛选（单一入口） -->
+    <div class="frame-wrap reveal" style="animation-delay:720ms">
+      <div class="frame-cap"><b>排序与筛选 · 单一入口</b><i>Sort &amp; Filter · One Sheet</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar">
+            <div class="t"><h3>媒体库</h3><p>客厅 NAS · 飞牛影视</p></div>
+            <button class="icon-btn" aria-label="搜索"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.3-3.3"/></svg></button>
+          </div>
+          <div class="chips">
+            <button class="chip" aria-pressed="true">全部</button>
+            <button class="chip">电影</button>
+            <button class="chip">剧集</button>
+            <button class="chip">动漫</button>
+          </div>
+          <div class="scroll">
+            <div class="grid2">
+              <div class="poster"><div class="art"><div class="g g1"></div><span class="rate">9.4</span></div><div class="cap"><b>星际穿越</b><i>2014 · 169min</i></div></div>
+              <div class="poster"><div class="art"><div class="g g2"></div><span class="rate">8.1</span></div><div class="cap"><b>奥本海默</b><i>2023 · 180min</i></div></div>
+              <div class="poster"><div class="art"><div class="g g3"></div><span class="rate">7.9</span></div><div class="cap"><b>沙丘</b><i>2021 · 155min</i></div></div>
+              <div class="poster"><div class="art"><div class="g g5"></div><span class="rate">8.7</span></div><div class="cap"><b>降临</b><i>2016 · 116min</i></div></div>
+            </div>
+          </div>
+          <button class="filterbtn" id="filterBtn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+            排序 / 筛选<span class="badge">3</span>
+          </button>
+          <div class="scrim" id="filterScrim"></div>
+          <div class="bottomsheet" id="filterSheet">
+            <div class="grab"></div>
+            <div class="bs-head"><b>排序 / 筛选</b><span class="reset" id="filterReset">恢复默认</span></div>
+            <div class="bs-sec">排序维度</div>
+            <div class="bs-grid">
+              <button class="bs-opt">时长</button>
+              <button class="bs-opt" aria-pressed="true">文件大小</button>
+              <button class="bs-opt">码率</button>
+              <button class="bs-opt">分辨率</button>
+              <button class="bs-opt">添加时间</button>
+              <button class="bs-opt">评分</button>
+              <button class="bs-opt">播放次数</button>
+              <button class="bs-opt">首播年份</button>
+              <button class="bs-opt">标题</button>
+            </div>
+            <div class="orderrow">主序 <span class="inline-seg" id="orderSeg"><span class="gl"></span><button aria-pressed="true">降序</button><button>升序</button></span> 次序 <span class="val">标题 ↑</span></div>
+            <div class="bs-sec">筛选条件</div>
+            <div class="bs-grid">
+              <button class="bs-opt" aria-pressed="true">未看</button>
+              <button class="bs-opt">已看</button>
+              <button class="bs-opt">在看</button>
+              <button class="bs-opt" aria-pressed="true">收藏</button>
+              <button class="bs-opt" aria-pressed="true">2020 年后</button>
+              <button class="bs-opt">4K</button>
+              <button class="bs-opt">1080P</button>
+              <button class="bs-opt">Emby</button>
+              <button class="bs-opt">飞牛</button>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:16px">
+              <button class="btn btn-tonal" style="flex:1;height:46px">重置</button>
+              <button class="btn btn-primary" style="flex:2;height:46px"><span id="filterApply">查看 71 个结果</span></button>
+            </div>
+            <p class="hintline" style="text-align:center;margin:10px 0 0">排序在本地已同步索引上瞬时完成，不出现 loading</p>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑪ 登录 · Emby（含测试连接） -->
+    <div class="frame-wrap reveal" style="animation-delay:800ms">
+      <div class="frame-cap"><b>登录 · Emby（测试连接）</b><i>Sign in · Probe</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <div class="t"><h3>添加 Emby 服务器</h3><p>先测试连接，再登录</p></div>
+          </div>
+          <div class="steps"><i class="on"></i><i class="on"></i></div>
+          <div class="formpad">
+            <div class="field"><label>服务器地址</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 2.5 15.3 0 18M12 3c-2.5 2.7-2.5 15.3 0 18"/></svg>
+              <input value="192.168.31.10" /></div></div>
+            <div class="field"><label>端口</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 9h12M6 15h12"/></svg>
+              <input value="8096" /></div></div>
+            <button class="btn btn-tonal" id="testBtn">测试连接</button>
+            <div class="probe-ok hide" id="probeOk">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+              <div>
+                <b>已连接 · MyEmby</b>
+                <p>版本 4.8.11.0 · 协议 Emby · 媒体库 6 个</p>
+              </div>
+            </div>
+            <div class="field"><label>账号</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="3.6"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
+              <input value="ting" /></div></div>
+            <div class="field"><label>密码</label><div class="box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <input type="password" value="password" /></div></div>
+            <button class="btn btn-primary">登录</button>
+            <p class="hintline">地址不可达 / 认证失败 / 端口或前缀错误（404）三种情况会分别提示，便于定位；未测试成功不允许进下一步。</p>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑫ 播放错误与降级 -->
+    <div class="frame-wrap reveal" style="animation-delay:880ms">
+      <div class="frame-cap"><b>播放错误与降级</b><i>Error &amp; Degrade</i></div>
+      <div class="device landscape">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="player">
+            <div class="film"></div>
+            <div class="subject"></div>
+            <div class="toastline">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>
+              <span>直放失败：dts-hd ma 音轨无法硬解，已自动切换转码…</span>
+            </div>
+            <div class="errcard">
+              <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5h.01"/></svg></span>
+              <b>转码失败</b>
+              <p>服务端返回 <code>500 TranscodeFailed</code>。<br/>该音轨需要软解，或服务端未开启转码。</p>
+              <div class="acts">
+                <button class="btn btn-tonal" id="errRetry">重试</button>
+                <button class="btn btn-primary">强制直放</button>
+              </div>
+              <p class="hintline" style="margin-top:2px">三档协商都不满足时明确报错，不会硬播；已写入诊断日志</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑬ 锁屏冷却与生物识别 -->
+    <div class="frame-wrap reveal" style="animation-delay:960ms">
+      <div class="frame-cap"><b>锁屏 · 冷却与生物识别</b><i>Lock · Cooldown</i></div>
+      <div class="device">
+        <div class="screen">
+          <div class="island"></div>
+          <div class="statusbar"><span>9:41</span><span class="glyphs">▮▮▮ ⌁ 100%</span></div>
+          <div class="lockwrap">
+            <div class="veil"></div>
+            <div class="lock-mark">C</div>
+            <div class="lock-title"><b>尝试次数过多</b><p class="err" id="cdText">请 30 秒后重试</p></div>
+            <div class="pattern dim" id="patternDim">
+              <span class="dot" style="left:18%;top:18%"><i></i></span>
+              <span class="dot" style="left:50%;top:18%"><i></i></span>
+              <span class="dot" style="left:82%;top:18%"><i></i></span>
+              <span class="dot" style="left:18%;top:50%"><i></i></span>
+              <span class="dot" style="left:50%;top:50%"><i></i></span>
+              <span class="dot" style="left:82%;top:50%"><i></i></span>
+              <span class="dot" style="left:18%;top:82%"><i></i></span>
+              <span class="dot" style="left:50%;top:82%"><i></i></span>
+              <span class="dot" style="left:82%;top:82%"><i></i></span>
+            </div>
+            <div class="lock-sub">连续 5 次失败起递增冷却<br/>30s → 1min → 5min · 失败次数加密存储</div>
+            <button class="mini-btn bio-btn" id="bioBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 4c-2.2 0-4.2.9-5.6 2.3M12 4c2.2 0 4.2.9 5.6 2.3"/><path d="M4.4 9.2A9.4 9.4 0 0 0 4 12c0 1.6.4 3 1.1 4.3"/><path d="M19.6 9.2c.3.9.4 1.8.4 2.8 0 3.2-1.6 6-4 7.6"/><path d="M8.5 20.2A9.4 9.4 0 0 1 6.4 17"/><path d="M12 8.5c1.9 0 3.5 1.6 3.5 3.5 0 2.2-.6 4.2-1.7 5.9"/><path d="M12 8.5c-1.9 0-3.5 1.6-3.5 3.5 0 1.4.2 2.7.7 3.9"/></svg>
+              使用指纹快捷解锁
+            </button>
+            <button class="mini-btn">忘记图案？</button>
+          </div>
+          <div class="gesturebar"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑭ 平板 · 抽屉导航 -->
+    <div class="frame-wrap reveal" style="animation-delay:1040ms">
+      <div class="frame-cap"><b>平板 · 抽屉导航</b><i>Tablet · NavigationRail</i></div>
+      <div class="device tablet">
+        <div class="screen">
+          <nav class="trailnav">
+            <button class="nit" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>首页</button>
+            <div class="grp">源</div>
+            <button class="nit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>客厅 NAS</button>
+            <button class="nit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/></svg>书房 Emby</button>
+            <div class="grp">库 · 客厅 NAS</div>
+            <button class="nit" aria-current="page">电影<span style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-3)">128</span></button>
+            <button class="nit">剧集<span style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-3)">42</span></button>
+            <button class="nit">动漫<span style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-3)">76</span></button>
+            <button class="nit">纪录片<span style="margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--text-3)">19</span></button>
+            <div style="flex:1"></div>
+            <button class="nit">本机视频 <span class="badge-soon">L2</span></button>
+            <button class="nit">设置</button>
+          </nav>
+          <div class="tablet-main">
+            <div class="appbar">
+              <div class="t"><h3>电影</h3><p>客厅 NAS · 飞牛影视 · 128 部</p></div>
+              <button class="icon-btn" aria-label="搜索"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.3-3.3"/></svg></button>
+              <button class="icon-btn" aria-label="排序筛选"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 6h16M7 12h10M10 18h4"/></svg></button>
+            </div>
+            <div class="scroll">
+              <div class="grid4">
+                <div class="poster"><div class="art"><div class="g g1"></div><span class="rate">9.4</span></div><div class="cap"><b>星际穿越</b><i>169min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g2"></div><span class="rate">8.1</span></div><div class="cap"><b>奥本海默</b><i>180min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g3"></div><span class="rate">7.9</span></div><div class="cap"><b>沙丘</b><i>155min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g5"></div><span class="rate">8.7</span></div><div class="cap"><b>降临</b><i>116min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g6"></div><span class="rate">8.2</span></div><div class="cap"><b>银翼杀手 2049</b><i>164min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g7"></div><span class="rate">8.5</span></div><div class="cap"><b>疯狂的麦克斯</b><i>120min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g4"></div><span class="rate">8.0</span></div><div class="cap"><b>火星救援</b><i>144min</i></div></div>
+                <div class="poster"><div class="art"><div class="g g8"></div><span class="rate">7.8</span></div><div class="cap"><b>月球</b><i>97min</i></div></div>
+              </div>
+              <div style="height:16px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <div class="section-title"><h2>色板</h2><span>TOKENS · 仅亮 / 暗两套</span><div class="rule"></div></div>
+  <div class="panel">
+    <div class="swatches">
+      <div class="sw"><div class="c" style="background:var(--brand)"></div><div class="m"><b>brand 主色</b><code data-hex="brand">#AED581</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--bg)"></div><div class="m"><b>bg 背景</b><code data-hex="bg">#0B0D11</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--surface)"></div><div class="m"><b>surface 表面</b><code data-hex="surface">#14171D</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--surface-2)"></div><div class="m"><b>surface-variant</b><code data-hex="surface-2">#1C2028</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--border)"></div><div class="m"><b>border 描边</b><code data-hex="border">#262C36</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--text)"></div><div class="m"><b>on-surface 文本</b><code data-hex="text">#E8EBF1</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--success)"></div><div class="m"><b>success</b><code data-hex="success">#4ED08A</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--warning)"></div><div class="m"><b>warning</b><code data-hex="warning">#E8A33D</code></div></div>
+      <div class="sw"><div class="c" style="background:var(--danger)"></div><div class="m"><b>danger</b><code data-hex="danger">#F2685F</code></div></div>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--brand)"></i>品牌 / 交互焦点</span>
+      <span><i style="background:var(--surface)"></i>卡片 / 分组底</span>
+      <span><i style="background:var(--border)"></i>分隔 / 容器描边</span>
+      <span>切换顶部主题，可观察同一 token 的亮暗取值</span>
+    </div>
+  </div>
+
+  <div class="section-title"><h2>排版与组件</h2><span>TYPE & COMPONENTS</span><div class="rule"></div></div>
+  <div class="spec-grid">
+    <div class="panel spec">
+      <h4>字体层级</h4>
+      <div class="type-row"><span class="sample" style="font-size:24px;font-weight:600">媒体库标题</span><span class="meta">24 / 600</span></div>
+      <div class="type-row"><span class="sample" style="font-size:17px;font-weight:600">分区小标题</span><span class="meta">17 / 600</span></div>
+      <div class="type-row"><span class="sample" style="font-size:14px">列表正文 Body</span><span class="meta">14 / 400</span></div>
+      <div class="type-row"><span class="sample" style="font-size:11.5px;color:var(--text-3)">辅助说明 Caption</span><span class="meta">11.5 / 400 · 次级色</span></div>
+      <div class="type-row"><span class="sample" style="font-family:var(--font-mono);font-size:13px">52:18 / 2:46:00</span><span class="meta">JetBrains Mono · 时间码等宽</span></div>
+      <div class="legend"><span>正文用思源黑体 / 苹方；时间码与数字统一等宽，避免跳动。</span></div>
+    </div>
+    <div class="panel spec">
+      <h4>按钮</h4>
+      <div class="comp-row"><button class="btn btn-primary" style="width:auto;padding:0 22px">主要按钮</button><button class="btn btn-tonal" style="width:auto;padding:0 22px">次要按钮</button><button class="btn btn-text" style="width:auto;padding:0 14px">文字按钮</button></div>
+      <h4 style="margin-top:22px">开关 / 分段</h4>
+      <div class="comp-row">
+        <span class="switch" role="switch" aria-checked="true" data-switch><i></i></span>
+        <span class="switch" role="switch" aria-checked="false" data-switch><i></i></span>
+        <span class="inline-seg demo-seg"><span class="gl"></span><button aria-pressed="true">系统</button><button>亮</button><button>暗</button></span>
+        <button class="mini-btn">胶囊按钮</button>
+      </div>
+      <h4 style="margin-top:22px">芯片 / 标签</h4>
+      <div class="comp-row"><button class="chip" aria-pressed="true">已选</button><button class="chip">未选</button><span class="badge-soon">后期 L2</span><span class="tagchip" style="background:var(--surface-2);border-color:var(--border);color:var(--text-2)">tagchip</span></div>
+    </div>
+  </div>
+
+  <div class="section-title"><h2>微动画基线</h2><span>MOTION · 全部 ≤ 300ms · 轻便</span><div class="rule"></div></div>
+  <div class="panel">
+    <table class="motion-table">
+      <thead><tr><th>交互</th><th>动画</th><th>时长</th><th>曲线</th></tr></thead>
+      <tbody>
+        <tr><td>按钮 / 图标按下</td><td>缩放至 0.90–0.97</td><td><code>140ms</code></td><td>FastOutSlowIn</td></tr>
+        <tr><td>卡片点击 / 悬停</td><td>上浮 3–4px + 阴影加深</td><td><code>220ms</code></td><td>FastOutSlowIn</td></tr>
+        <tr><td>海报悬停</td><td>上浮 + 播放键放大 1.08</td><td><code>220ms</code></td><td>Emphasized</td></tr>
+        <tr><td>分段控件切换</td><td>指示器滑移 / 宽度过渡</td><td><code>300ms</code></td><td>Emphasized</td></tr>
+        <tr><td>开关切换</td><td>旋钮位移 + 轨道变色（M3 默认）</td><td><code>300ms</code></td><td>Emphasized</td></tr>
+        <tr><td>列表 / 分组展开</td><td>max-height 展开 + 箭头旋转</td><td><code>300ms</code></td><td>Emphasized</td></tr>
+        <tr><td>九宫格连线</td><td>逐点高亮 + 轨迹线跟随</td><td><code>140ms/点</code></td><td>FastOutSlowIn</td></tr>
+        <tr><td>九宫格错误</td><td>横向抖动 3 次</td><td><code>320ms</code></td><td>FastOutSlowIn</td></tr>
+        <tr><td>输入框聚焦</td><td>描边变主色 + 4px 光晕</td><td><code>220ms</code></td><td>FastOutSlowIn</td></tr>
+        <tr><td>播放控制层显隐</td><td>整体淡入淡出（3s 自动隐藏）</td><td><code>300ms</code></td><td>LinearOutSlowIn</td></tr>
+        <tr><td>进度条拖动预览</td><td>气泡淡入放大 + 缩略图跟随</td><td><code>220ms</code></td><td>Emphasized</td></tr>
+        <tr><td>设置弹层（播放页）</td><td>从右下角缩放入场</td><td><code>300ms</code></td><td>Emphasized</td></tr>
+        <tr><td>倍速切换 toast</td><td>淡入 + 缩放，1.2s 后淡出</td><td><code>220ms</code></td><td>Emphasized</td></tr>
+        <tr><td>页面 / 列表进入</td><td>错落上浮入场（stagger）</td><td><code>300ms</code></td><td>FastOutSlowIn</td></tr>
+      </tbody>
+    </table>
+    <div class="legend">
+      <span>硬约束：一切时长 ≤ 300ms，禁止大面积位移 / 强弹性 / 视差 / 粒子等重动效。</span>
+      <span>系统开启「移除动画」时，全部退化为瞬时切换（已用 prefers-reduced-motion 兜底）。</span>
+    </div>
+  </div>
+</main>
+<script>
+(function(){
+  "use strict";
+  var root = document.documentElement;
+
+  /* ---------- 主题：跟随系统 / 亮 / 暗 ---------- */
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var themeMode = 'dark';
+  function applyTheme(mode){
+    themeMode = mode;
+    if(mode === 'system'){ root.dataset.theme = mq.matches ? 'dark' : 'light'; }
+    else { root.dataset.theme = mode; }
+    updateHex();
+    positionIndicator(document.getElementById('themeSeg'));
+    positionIndicator(document.getElementById('themeInline'));
+    positionIndicator(document.getElementById('speedInline'));
+  }
+  function updateHex(){
+    var cs = getComputedStyle(root);
+    document.querySelectorAll('[data-hex]').forEach(function(el){
+      var v = cs.getPropertyValue('--' + el.dataset.hex).trim();
+      if(v) el.textContent = v.toLowerCase();
+    });
+  }
+  mq.addEventListener('change', function(){ if(themeMode === 'system') applyTheme('system'); });
+
+  var themeSeg = document.getElementById('themeSeg');
+  themeSeg.querySelectorAll('button').forEach(function(b){
+    b.addEventListener('click', function(){
+      themeSeg.querySelectorAll('button').forEach(function(x){ x.removeAttribute('aria-pressed'); });
+      b.setAttribute('aria-pressed','true');
+      applyTheme(b.dataset.themeSet);
+    });
+  });
+
+  /* ---------- 通用分段指示器 ---------- */
+  function positionIndicator(container){
+    if(!container) return;
+    var btn = container.querySelector('button[aria-pressed="true"]');
+    var ind = container.querySelector('.ind, .gl');
+    if(!btn || !ind) return;
+    ind.style.left = '3px';
+    ind.style.width = btn.offsetWidth + 'px';
+    ind.style.transform = 'translateX(' + (btn.offsetLeft - 3) + 'px)';
+  }
+  document.querySelectorAll('.seg, .inline-seg').forEach(function(container, idx){
+    container.querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click', function(){
+        container.querySelectorAll('button').forEach(function(x){ x.removeAttribute('aria-pressed'); });
+        b.setAttribute('aria-pressed','true');
+        positionIndicator(container);
+      });
+    });
+    if(container.id === 'speedInline'){
+      container.querySelectorAll('button').forEach(function(b){
+        b.addEventListener('click', function(){ document.getElementById('speedVal').textContent = b.textContent; });
+      });
+    }
+  });
+
+  /* ---------- 开关 ---------- */
+  document.querySelectorAll('[data-switch]').forEach(function(sw){
+    sw.addEventListener('click', function(e){
+      e.stopPropagation();
+      sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+    });
+  });
+
+  /* ---------- 芯片单选 ---------- */
+  document.querySelectorAll('.chips').forEach(function(row){
+    row.querySelectorAll('.chip').forEach(function(chip){
+      chip.addEventListener('click', function(){
+        row.querySelectorAll('.chip').forEach(function(c){ c.removeAttribute('aria-pressed'); });
+        chip.setAttribute('aria-pressed','true');
+      });
+    });
+  });
+
+  /* ---------- 设置页：分组展开 ---------- */
+  var playExpand = document.getElementById('playExpand');
+  var speedExpander = document.getElementById('speedExpander');
+  var speedChev = document.getElementById('speedChev');
+  if(playExpand){
+    playExpand.addEventListener('click', function(){
+      var open = speedExpander.classList.toggle('open');
+      speedChev.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+    });
+  }
+
+  /* ---------- 登录：模拟连接 ---------- */
+  var loginBtn = document.getElementById('loginBtn');
+  var loginVeil = document.getElementById('loginVeil');
+  if(loginBtn){
+    loginBtn.addEventListener('click', function(){
+      loginVeil.classList.remove('hide');
+      setTimeout(function(){ loginVeil.classList.add('hide'); }, 1800);
+    });
+  }
+
+  /* ---------- 九宫格锁屏 ---------- */
+  var pattern = document.getElementById('pattern');
+  if(pattern){
+    var box = 236, pos = [];
+    [18,50,82].forEach(function(r){ [18,50,82].forEach(function(c){ pos.push({ x: box*r/100, y: box*c/100 }); }); });
+    var dots = pattern.querySelectorAll('.dot');
+    var trail = document.getElementById('trail');
+    var okMsg = document.getElementById('lockOk');
+    var hint = document.getElementById('lockHint');
+    var demo = [0,3,6,7,8];
+    var seq = [];
+    var drawing = false;
+
+    function render(){
+      trail.setAttribute('points', seq.map(function(i){ return pos[i].x + ',' + pos[i].y; }).join(' '));
+      dots.forEach(function(d, i){ d.classList.toggle('on', seq.indexOf(i) !== -1); });
+    }
+    function reset(){ seq = []; render(); okMsg.classList.remove('show'); pattern.classList.remove('err'); hint.classList.remove('err'); hint.textContent = '连接至少 4 个点'; }
+    function validate(){
+      if(seq.length < 4){ return false; }
+      return seq.join(',') === demo.join(',');
+    }
+    function finish(){
+      if(validate()){
+        okMsg.classList.add('show');
+        hint.textContent = '图案正确';
+      } else {
+        pattern.classList.add('err');
+        hint.classList.add('err');
+        hint.textContent = '图案错误，请重试';
+        setTimeout(reset, 700);
+      }
+    }
+    function nearest(x, y){
+      var best = -1, bd = 40;
+      pos.forEach(function(p, i){
+        var d = Math.hypot(p.x - x, p.y - y);
+        if(d < bd){ bd = d; best = i; }
+      });
+      return best;
+    }
+    function localXY(e){
+      var r = pattern.getBoundingClientRect();
+      var cx = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+      var cy = (e.touches ? e.touches[0].clientY : e.clientY) - r.top;
+      return { x: cx * box / r.width, y: cy * box / r.height };
+    }
+    function down(e){
+      if(pattern.classList.contains('err')) return;
+      drawing = true; seq = []; okMsg.classList.remove('show');
+      hint.classList.remove('err'); hint.textContent = '连接至少 4 个点';
+      move(e);
+    }
+    function move(e){
+      if(!drawing) return;
+      var p = localXY(e);
+      var i = nearest(p.x, p.y);
+      if(i !== -1 && seq.indexOf(i) === -1){ seq.push(i); render(); }
+    }
+    function up(){ if(!drawing) return; drawing = false; finish(); }
+
+    pattern.addEventListener('pointerdown', function(e){ pattern.setPointerCapture(e.pointerId); down(e); });
+    pattern.addEventListener('pointermove', move);
+    pattern.addEventListener('pointerup', up);
+    pattern.addEventListener('pointercancel', up);
+
+    function autoplay(){
+      reset(); okMsg.classList.remove('show');
+      var k = 0;
+      var timer = setInterval(function(){
+        seq.push(demo[k]); render(); k++;
+        if(k >= demo.length){
+          clearInterval(timer);
+          setTimeout(function(){ okMsg.classList.add('show'); hint.textContent = '图案正确'; }, 200);
+        }
+      }, 260);
+    }
+    document.getElementById('lockReplay').addEventListener('click', autoplay);
+    setTimeout(autoplay, 900);
+  }
+
+  /* ---------- 横屏播放页 ---------- */
+  var controls = document.getElementById('controls');
+  var sheet = document.getElementById('sheet');
+  var toast = document.getElementById('toast');
+  var playerFrame = controls ? controls.closest('.player') : null;
+  var hideTimer = null;
+  var sheetOpen = false;
+
+  function showControls(){
+    if(!controls || sheetOpen) return;
+    controls.classList.remove('hide');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function(){ if(!sheetOpen) controls.classList.add('hide'); }, 3200);
+  }
+  if(playerFrame){
+    playerFrame.addEventListener('mousemove', showControls);
+    playerFrame.addEventListener('pointerdown', showControls);
+    showControls();
+  }
+
+  var playBtn = document.getElementById('playBtn');
+  var playIcon = document.getElementById('playIcon');
+  if(playBtn){
+    playBtn.addEventListener('click', function(){
+      var paused = playIcon.dataset.paused === 'true';
+      playIcon.dataset.paused = paused ? 'false' : 'true';
+      playIcon.innerHTML = paused ? '<path d="M8 5v14l11-7z"/>' : '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+      showControls();
+    });
+  }
+
+  var settingBtn = document.getElementById('settingBtn');
+  if(settingBtn){
+    settingBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      sheetOpen = !sheetOpen;
+      sheet.classList.toggle('show', sheetOpen);
+      if(sheetOpen){ clearTimeout(hideTimer); controls.classList.remove('hide'); }
+      else { showControls(); }
+    });
+  }
+  /* 点击播放区空白处收起设置弹层 */
+  if(playerFrame && sheet){
+    playerFrame.addEventListener('click', function(e){
+      if(!sheetOpen) return;
+      if(sheet.contains(e.target) || (settingBtn && settingBtn.contains(e.target))) return;
+      sheetOpen = false;
+      sheet.classList.remove('show');
+      showControls();
+    });
+  }
+
+  /* 进度条 hover 预览（trickplay） */
+  var track = document.getElementById('track');
+  var preview = document.getElementById('preview');
+  var previewTc = document.getElementById('previewTc');
+  var done = document.getElementById('done');
+  var knob = document.getElementById('knob');
+  var totalSec = 9960;
+  function fmt(s){
+    s = Math.max(0, Math.round(s));
+    var h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = s%60;
+    function p(n){ return n < 10 ? '0'+n : ''+n; }
+    return (h>0 ? h+':'+p(m) : m) + ':' + p(ss);
+  }
+  if(track){
+    track.addEventListener('mousemove', function(e){
+      var r = track.getBoundingClientRect();
+      var ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      preview.classList.add('show');
+      var pw = preview.offsetWidth || 132;
+      preview.style.left = (ratio*100) + '%';
+      preview.style.marginLeft = '0px';
+      var clamp = ratio*r.width;
+      var shift = 0;
+      if(clamp < pw/2) shift = (pw/2 - clamp);
+      else if(clamp > r.width - pw/2) shift = -((clamp) - (r.width - pw/2));
+      preview.style.transform = 'translateX(calc(-50% + ' + shift + 'px)) scale(1)';
+      previewTc.textContent = fmt(ratio*totalSec);
+    });
+    track.addEventListener('mouseleave', function(){ preview.classList.remove('show'); });
+    track.addEventListener('click', function(e){
+      var r = track.getBoundingClientRect();
+      var ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      done.style.width = (ratio*100) + '%';
+      knob.style.left = (ratio*100) + '%';
+      document.getElementById('tCur').textContent = fmt(ratio*totalSec);
+      showControls();
+    });
+  }
+
+  /* 倍速切换 + toast */
+  var cur = 1.5;
+  function showToast(v){
+    toast.innerHTML = v.toFixed(2).replace(/0+$/,'').replace(/\.$/,'') + '×<small>全局倍速已生效</small>';
+    toast.classList.add('show');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function(){ toast.classList.remove('show'); }, 1400);
+  }
+  var speedPill = document.getElementById('speedPill');
+  if(speedPill){
+    speedPill.addEventListener('click', function(){
+      var steps = [1.0, 1.25, 1.5, 2.0];
+      cur = steps[(steps.indexOf(cur) + 1) % steps.length];
+      speedPill.textContent = cur + '× 全局';
+      showToast(cur);
+    });
+  }
+  document.querySelectorAll('#sheetSpeed .k').forEach(function(k){
+    k.addEventListener('click', function(){
+      document.querySelectorAll('#sheetSpeed .k').forEach(function(x){ x.removeAttribute('aria-pressed'); });
+      k.setAttribute('aria-pressed','true');
+      cur = parseFloat(k.textContent);
+      speedPill.textContent = cur + '× 全局';
+      showToast(cur);
+    });
+  });
+  document.querySelectorAll('#sheetRatio .k').forEach(function(k){
+    k.addEventListener('click', function(){
+      document.querySelectorAll('#sheetRatio .k').forEach(function(x){ x.removeAttribute('aria-pressed'); });
+      k.setAttribute('aria-pressed','true');
+    });
+  });
+
+  /* ---------- 搜索：输入即搜（中文子串 / 拼音全拼 / 首字母） ---------- */
+  var sInput = document.getElementById('searchInput');
+  if(sInput){
+    var sResults = document.getElementById('searchResults');
+    var sCount = document.getElementById('searchCount');
+    var sBar = document.getElementById('searchBar');
+    var sEmpty = document.getElementById('searchEmpty');
+    var sHint = document.getElementById('searchHint');
+    var sCards = Array.prototype.slice.call(sResults.querySelectorAll('.poster'));
+    function runSearch(){
+      var q = sInput.value.trim().toLowerCase();
+      var hit = 0;
+      sCards.forEach(function(c){
+        var label = c.querySelector('.cap b') ? c.querySelector('.cap b').textContent.toLowerCase() : '';
+        var key = ((c.dataset.k || '') + ' ' + label).toLowerCase();
+        var ok = q === '' || key.indexOf(q) !== -1;
+        c.classList.toggle('hide', !ok);
+        if(ok) hit++;
+      });
+      sCount.textContent = hit;
+      sEmpty.classList.toggle('hide', hit > 0);
+      sBar.classList.toggle('hide', hit === 0);
+      sHint.textContent = (q === '')
+        ? '输入即搜 · 支持中文子串 / 拼音全拼 / 首字母'
+        : '输入即搜 · 命中 ' + hit + ' 条（无需点「搜索」）';
+    }
+    sInput.addEventListener('input', runSearch);
+    var sClear = document.getElementById('searchClear');
+    if(sClear){ sClear.addEventListener('click', function(){ sInput.value = ''; sInput.focus(); runSearch(); }); }
+    var sChips = document.getElementById('searchChips');
+    if(sChips){
+      sChips.querySelectorAll('.chip').forEach(function(c){
+        c.addEventListener('click', function(){ sInput.value = c.textContent.trim(); runSearch(); });
+      });
+    }
+    runSearch();
+  }
+
+  /* ---------- 详情页：技术信息展开 + 收藏 ---------- */
+  var techHead = document.getElementById('techHead');
+  var techExpander = document.getElementById('techExpander');
+  if(techHead && techExpander){
+    techHead.addEventListener('click', function(){ techExpander.classList.toggle('open'); });
+  }
+  var favBtn = document.getElementById('favBtn');
+  if(favBtn){ favBtn.addEventListener('click', function(){ favBtn.classList.toggle('on'); }); }
+
+  /* ---------- 竖屏播放：进度条预览与 seek ---------- */
+  (function(){
+    var t = document.getElementById('p2track');
+    if(!t) return;
+    var pv = document.getElementById('p2preview'), tc = document.getElementById('p2tc');
+    var dn = document.getElementById('p2done'), kb = document.getElementById('p2knob');
+    var total = 9960;
+    t.addEventListener('mousemove', function(e){
+      var r = t.getBoundingClientRect();
+      var ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      pv.classList.add('show');
+      pv.style.left = (ratio * 100) + '%';
+      tc.textContent = fmt(ratio * total);
+    });
+    t.addEventListener('mouseleave', function(){ pv.classList.remove('show'); });
+    t.addEventListener('click', function(e){
+      var r = t.getBoundingClientRect();
+      var ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      dn.style.width = (ratio * 100) + '%';
+      kb.style.left = (ratio * 100) + '%';
+    });
+  })();
+
+  /* ---------- 排序 / 筛选弹层 ---------- */
+  var filterBtn = document.getElementById('filterBtn');
+  if(filterBtn){
+    var fSheet = document.getElementById('filterSheet');
+    var fScrim = document.getElementById('filterScrim');
+    var fApply = document.getElementById('filterApply');
+    var fBadge = filterBtn.querySelector('.badge');
+    var fGrids = fSheet.querySelectorAll('.bs-grid');
+    var sortOpts = fGrids[0].querySelectorAll('.bs-opt');
+    var filterOpts = fGrids[1].querySelectorAll('.bs-opt');
+
+    function toggleSheet(on){ fSheet.classList.toggle('show', on); fScrim.classList.toggle('show', on); }
+    filterBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      toggleSheet(!fSheet.classList.contains('show'));
+    });
+    fScrim.addEventListener('click', function(){ toggleSheet(false); });
+
+    /* 排序：单选 */
+    sortOpts.forEach(function(o){
+      o.addEventListener('click', function(){
+        sortOpts.forEach(function(x){ x.removeAttribute('aria-pressed'); });
+        o.setAttribute('aria-pressed', 'true');
+      });
+    });
+    /* 筛选：多选，实时更新徽标与结果数 */
+    function recount(){
+      var n = 0;
+      filterOpts.forEach(function(o){ if(o.getAttribute('aria-pressed') === 'true') n++; });
+      fBadge.textContent = n;
+      fApply.textContent = '查看 ' + Math.max(4, 128 - n * 19) + ' 个结果';
+    }
+    filterOpts.forEach(function(o){
+      o.addEventListener('click', function(){
+        o.setAttribute('aria-pressed', o.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+        recount();
+      });
+    });
+    var fReset = document.getElementById('filterReset');
+    if(fReset){
+      fReset.addEventListener('click', function(){
+        filterOpts.forEach(function(o){ o.removeAttribute('aria-pressed'); });
+        sortOpts.forEach(function(o, i){
+          if(i === 1){ o.setAttribute('aria-pressed', 'true'); } else { o.removeAttribute('aria-pressed'); }
+        });
+        recount();
+      });
+    }
+    recount();
+    setTimeout(function(){ toggleSheet(true); }, 1500);
+  }
+
+  /* ---------- Emby 登录：测试连接 ---------- */
+  var testBtn = document.getElementById('testBtn');
+  var probeOk = document.getElementById('probeOk');
+  if(testBtn && probeOk){
+    testBtn.addEventListener('click', function(){
+      testBtn.textContent = '正在探测 /System/Info/Public …';
+      testBtn.classList.add('btn-testing');
+      probeOk.classList.add('hide');
+      setTimeout(function(){
+        testBtn.textContent = '测试连接';
+        testBtn.classList.remove('btn-testing');
+        probeOk.classList.remove('hide');
+      }, 1400);
+    });
+  }
+
+  /* ---------- 播放错误：重试 ---------- */
+  var errRetry = document.getElementById('errRetry');
+  if(errRetry){
+    errRetry.addEventListener('click', function(){
+      errRetry.textContent = '重试中…';
+      setTimeout(function(){ errRetry.textContent = '重试'; }, 1400);
+    });
+  }
+
+  /* ---------- 锁屏冷却倒计时 + 指纹快捷解锁 ---------- */
+  var cdText = document.getElementById('cdText');
+  if(cdText){
+    var cdSec = 30, cdTimer = null;
+    var dimPattern = document.getElementById('patternDim');
+    function cdTick(){
+      if(cdSec <= 0){
+        clearInterval(cdTimer);
+        cdText.textContent = '可以重新绘制图案了';
+        cdText.classList.remove('err');
+        if(dimPattern) dimPattern.classList.remove('dim');
+        return;
+      }
+      cdText.textContent = '请 ' + cdSec + ' 秒后重试';
+      cdSec--;
+    }
+    cdTick();
+    cdTimer = setInterval(cdTick, 1000);
+    var bioBtn = document.getElementById('bioBtn');
+    if(bioBtn){
+      bioBtn.addEventListener('click', function(){
+        clearInterval(cdTimer);
+        cdText.classList.remove('err');
+        cdText.textContent = '指纹验证通过 · 正在解锁';
+        if(dimPattern) dimPattern.classList.remove('dim');
+      });
+    }
+  }
+
+  /* ---------- 初始化 ---------- */
+  positionIndicator(themeSeg);
+  positionIndicator(document.getElementById('themeInline'));
+  positionIndicator(document.getElementById('speedInline'));
+  updateHex();
+})();
+</script>
+</body>
+</html>

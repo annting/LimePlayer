@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  debug 构建专用的 Manifest 叠加层（不会进入 release 包）。
+
+  目的：
+  1. 允许明文 HTTP —— 局域网自建服务器通常是 http://192.168.x.x:8096；
+  2. 信任用户安装的 CA —— M0 阶段要用抓包工具（Charles / mitmproxy）看飞牛的接口，
+     不装用户证书的话 HTTPS 会被拒。
+
+  release 构建不包含本文件，保持 docs/02-技术规范.md §8 的「默认关闭」安全基线。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+
+</manifest>

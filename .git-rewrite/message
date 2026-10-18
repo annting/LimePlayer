@@ -1,0 +1,4 @@
+chore(security): redact fnOS secret values from tracked docs
+
+- docs/05 用 <FN_SECRET>/<FN_API_KEY> 占位，算法描述保留
+- 具体值移入 docs/LOCAL_SECRETS.md 并加入 .gitignore（不入库）
