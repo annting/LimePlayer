@@ -43,6 +43,15 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
         if (currentHeaders.isEmpty()) spec else spec.withRequestHeaders(currentHeaders)
     }
 
+    // 字幕渲染（任务：字幕渲染）：media3-ui 1.11 的 SubtitleView 没有 setPlayer，
+    // 改走 Player.Listener.onCues → view.setCues（声明需在 init 之前）。
+    private var subtitleView: androidx.media3.ui.SubtitleView? = null
+    private val cueListener = object : Player.Listener {
+        override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+            subtitleView?.setCues(cueGroup.cues)
+        }
+    }
+
     private val player: ExoPlayer = ExoPlayer.Builder(context)
         .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
         .setHandleAudioBecomingNoisy(true)   // 耳机拔出自动暂停
@@ -93,6 +102,7 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
     }
 
     init {
+        player.addListener(cueListener)
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) = syncStructure()
 
@@ -126,7 +136,11 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
             is PlaybackPlan.Transcode -> plan.headers
         }
         _state.value = EngineState()   // 新会话：清空上一次的 error / tracks / position
-        player.setMediaItem(plan.toMediaItem(), startPositionMs)
+        val subs = when (plan) {
+            is PlaybackPlan.Direct -> plan.subtitles
+            is PlaybackPlan.Transcode -> plan.subtitles
+        }
+        player.setMediaItem(plan.toMediaItem(subs), startPositionMs)
         player.prepare()
         syncStructure()
         mainHandler.removeCallbacks(ticker)
@@ -176,10 +190,16 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
         if (!released) player.setVideoSurface(surface)
     }
 
+    override fun attachSubtitleView(view: android.view.View?) {
+        subtitleView = view as? androidx.media3.ui.SubtitleView
+        subtitleView?.setCues(player.currentCues.cues)
+    }
+
     override fun stopSession() {
         if (released) return
         player.stop()
         player.clearMediaItems()
+        subtitleView?.setCues(emptyList())
         _state.update { EngineState() }   // 会话结束：清空上一次的 error / tracks / position
     }
 
@@ -234,15 +254,29 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
  * `Transcode` 显式标注 HLS MIME —— 转码 URL 的 path 是 `master.m3u8` 且带 query，
  * 不依赖 [DefaultMediaSourceFactory] 的扩展名推断，避免路径变体（如服务端改写 URL）导致回退到渐进式解析。
  */
-internal fun PlaybackPlan.toMediaItem(): MediaItem = when (this) {
+internal fun PlaybackPlan.toMediaItem(subtitles: List<app.myplayer.core.model.ExternalSubtitle> = emptyList()): MediaItem {
+    // 外挂字幕轨（任务：字幕渲染）：服务端按需转 srt/vtt 下发，ExoPlayer 侧载后
+    // 会出现在 TRACK_TYPE_TEXT 轨道里，播放器菜单即可切换。
+    val subtitleConfigs = subtitles.map { sub ->
+        MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(sub.url))
+            .setMimeType(sub.mimeType)
+            .setLanguage(sub.language)
+            .setLabel(sub.label)
+            .setSelectionFlags(if (sub.isDefault) C.SELECTION_FLAG_DEFAULT else 0)
+            .build()
+    }
+    return when (this) {
     is PlaybackPlan.Direct -> MediaItem.Builder()
         .setUri(uri)
+        .setSubtitleConfigurations(subtitleConfigs)
         .build()
 
     is PlaybackPlan.Transcode -> MediaItem.Builder()
         .setUri(hlsUrl)
         .setMimeType(MimeTypes.APPLICATION_M3U8)
+        .setSubtitleConfigurations(subtitleConfigs)
         .build()
+    }
 }
 
 // ---- Tracks → TrackInfo ----

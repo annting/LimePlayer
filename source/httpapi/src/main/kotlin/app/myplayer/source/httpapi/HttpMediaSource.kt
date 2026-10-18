@@ -95,19 +95,39 @@ abstract class HttpMediaSource(
         val token = api.config.token
         val transcodingUrl = source?.transcodingUrl?.takeIf { it.isNotBlank() }?.let(::playbackUrl)
 
+        // 文本字幕外挂下发（任务：字幕渲染）：服务端按需转 srt，ExoPlayer 侧载渲染。
+        // 图形字幕（PGS/VobSub，isTextSubtitleStream=false）无法下发，交给转码烧录。
+        val subtitles = source?.mediaStreams
+            .orEmpty()
+            .filter {
+                it.type == "Subtitle" && it.isTextSubtitleStream &&
+                    (it.isExternal || it.supportsExternalStream)
+            }
+            .map { st ->
+                app.myplayer.core.model.ExternalSubtitle(
+                    url = api.subtitleStreamUrl(item.id, mediaSourceId, st.index, token),
+                    mimeType = subtitleMime(st.codec),
+                    language = st.language,
+                    label = st.displayTitle ?: st.title ?: st.language ?: "字幕 ${st.index}",
+                    isDefault = st.isDefault,
+                )
+            }
+
         val plan = when {
             !forceTranscode && source?.supportsDirectPlay == true ->
                 PlaybackPlan.Direct(
                     uri = api.directStreamUrl(item.id, mediaSourceId, token),
                     mediaSourceId = mediaSourceId,
+                    subtitles = subtitles,
                 )
             transcodingUrl != null ->
-                PlaybackPlan.Transcode(transcodingUrl, isRemuxOnly = source.supportsDirectStream)
+                PlaybackPlan.Transcode(transcodingUrl, isRemuxOnly = source.supportsDirectStream, subtitles = subtitles)
             source?.supportsTranscoding == true || forceTranscode ->
                 // 服务端说支持转码但没回地址（或强制降级）：按固定入口自拼 HLS
                 PlaybackPlan.Transcode(
                     playbackUrl("/Videos/${item.id}/master.m3u8?MediaSourceId=$mediaSourceId"),
                     isRemuxOnly = false,
+                    subtitles = subtitles,
                 )
             else -> error("该条目既不能直放也不能转码：${item.id}")
         }
@@ -121,6 +141,13 @@ abstract class HttpMediaSource(
         )
         reportedStart = false
         return plan
+    }
+
+    /** 字幕 codec → ExoPlayer mimeType（未知格式回退 srt；服务端会按 format 参数转格式）。 */
+    private fun subtitleMime(codec: String?): String = when (codec?.lowercase()) {
+        "vtt", "webvtt" -> "text/vtt"
+        "ass", "ssa" -> "text/x-ssa"
+        else -> "application/x-subrip"
     }
 
     /**

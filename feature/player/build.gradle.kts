@@ -36,6 +36,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.core)
     // trickplay 预览分片图（任务 3-2）
     implementation(libs.coil.compose)

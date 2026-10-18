@@ -17,6 +17,18 @@ enum class ImageSize(val px: Int) { SMALL(200), MEDIUM(400), LARGE(800) }
 /** 进度上报用。 */
 enum class PlayState { PLAYING, PAUSED, STOPPED }
 
+/**
+ * 外挂字幕轨（任务：字幕渲染）。[url] 必须带鉴权（api_key 或请求头），
+ * [mimeType] 见 ExoPlayer 支持的文本格式（application/x-subrip、text/vtt、text/x-ssa…）。
+ */
+data class ExternalSubtitle(
+    val url: String,
+    val mimeType: String,
+    val language: String? = null,
+    val label: String? = null,
+    val isDefault: Boolean = false,
+)
+
 data class UserData(
     val isPlayed: Boolean = false,
     val resumePositionTicks: Ticks = Ticks.ZERO,
@@ -105,12 +117,15 @@ sealed interface PlaybackPlan {
         val uri: String,
         val headers: Map<String, String> = emptyMap(),
         val mediaSourceId: String? = null,
+        /** 外挂字幕轨（服务端按需转格式下发；任务：字幕渲染）。 */
+        val subtitles: List<ExternalSubtitle> = emptyList(),
     ) : PlaybackPlan
 
     data class Transcode(
         val hlsUrl: String,
         val headers: Map<String, String> = emptyMap(),
         val isRemuxOnly: Boolean = false,
+        val subtitles: List<ExternalSubtitle> = emptyList(),
     ) : PlaybackPlan
 }
 

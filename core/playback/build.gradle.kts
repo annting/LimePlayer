@@ -25,6 +25,7 @@ dependencies {
     // 播放内核（当前实现）；HLS 用于转码流。MediaSession 在任务 2-4 引入。
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)

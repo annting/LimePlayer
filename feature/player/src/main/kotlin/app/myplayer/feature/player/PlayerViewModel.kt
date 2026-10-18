@@ -442,6 +442,9 @@ class PlayerViewModel(
     /** 视频输出面绑定：SurfaceView 的生命周期回调经此透传给引擎。 */
     fun attachVideoSurface(surface: android.view.Surface?) = engine.setVideoSurface(surface)
 
+    /** 字幕渲染视图绑定（任务：字幕渲染）；不支持的引擎实现为 no-op。 */
+    fun attachSubtitleView(view: android.view.View?) = engine.attachSubtitleView(view)
+
     override fun onCleared() {
         // viewModelScope 此时已取消：用独立 scope 把 STOPPED 补报出去（fire-and-forget）。
         // 不做的话服务端没有播放结束记录，PlayCount 不涨、「继续观看」只能靠最后一次 10s 周期上报兜底。

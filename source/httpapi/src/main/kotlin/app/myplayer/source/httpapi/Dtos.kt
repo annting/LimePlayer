@@ -73,6 +73,23 @@ data class MediaSourceInfoDto(
     @SerialName("SupportsDirectStream") val supportsDirectStream: Boolean = false,
     @SerialName("SupportsTranscoding") val supportsTranscoding: Boolean = false,
     @SerialName("TranscodingUrl") val transcodingUrl: String? = null,
+    @SerialName("MediaStreams") val mediaStreams: List<MediaStreamDto> = emptyList(),
+)
+
+/** 单条媒体流（音 / 视 / 字幕，`02` §6.1）。字幕轨据此下发外挂地址。 */
+@Serializable
+data class MediaStreamDto(
+    @SerialName("Type") val type: String? = null,
+    @SerialName("Index") val index: Int = 0,
+    @SerialName("Codec") val codec: String? = null,
+    @SerialName("Language") val language: String? = null,
+    @SerialName("DisplayTitle") val displayTitle: String? = null,
+    @SerialName("Title") val title: String? = null,
+    @SerialName("IsExternal") val isExternal: Boolean = false,
+    /** 文本字幕（非图形 PGS/VobSub）——只有这类能外挂下发。 */
+    @SerialName("IsTextSubtitleStream") val isTextSubtitleStream: Boolean = false,
+    @SerialName("SupportsExternalStream") val supportsExternalStream: Boolean = false,
+    @SerialName("IsDefault") val isDefault: Boolean = false,
 )
 
 @Serializable

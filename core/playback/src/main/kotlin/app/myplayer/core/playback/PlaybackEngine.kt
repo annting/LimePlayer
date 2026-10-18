@@ -43,6 +43,12 @@ interface PlaybackEngine {
     fun setSpeed(speed: Float)
 
     /**
+     * 绑定字幕渲染视图（如 Media3 `SubtitleView`）。UI 侧组合进入时调用；
+     * 实现不支持字幕渲染时为 no-op。
+     */
+    fun attachSubtitleView(view: android.view.View?) {}
+
+    /**
      * 选择音轨 / 字幕轨。[trackId] 为 [EngineState.tracks] 中的 id；
      * 传 `null` 表示关闭该类型（如关闭字幕）。
      */

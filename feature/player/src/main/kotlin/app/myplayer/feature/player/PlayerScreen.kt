@@ -156,6 +156,13 @@ fun PlayerScreen(
                 sink = vm::attachVideoSurface,
                 modifier = Modifier.align(Alignment.Center).then(videoModifier),
             )
+            // 字幕渲染层（任务：字幕渲染）：Media3 SubtitleView 直接消费引擎 cues，
+            // 与视频面同区域对齐，随画面比例模式一起缩放。
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx -> androidx.media3.ui.SubtitleView(ctx) },
+                update = { view -> vm.attachSubtitleView(view) },
+                modifier = Modifier.align(Alignment.Center).then(videoModifier),
+            )
         }
 
         GestureLayer(vm = vm, locked = state.locked, onIndicator = { indicator = it })

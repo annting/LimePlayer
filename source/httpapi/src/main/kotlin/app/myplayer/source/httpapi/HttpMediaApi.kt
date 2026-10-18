@@ -168,6 +168,15 @@ class HttpMediaApi(
             apiKey?.let { put("api_key", it) }
         }).toString()
 
+    /**
+     * 外挂字幕地址（任务：字幕渲染）：服务端按需转 `format` 格式（默认 srt），
+     * 鉴权与直放一致走 api_key 查询参数。
+     */
+    fun subtitleStreamUrl(itemId: String, mediaSourceId: String, subtitleIndex: Int, apiKey: String?): String =
+        url("/Videos/$itemId/$mediaSourceId/Subtitles/$subtitleIndex/Stream.srt", buildMap {
+            apiKey?.let { put("api_key", it) }
+        }).toString()
+
     private fun Request.Builder.applyAuth(): Request.Builder =
         apply { authHeaders().forEach { (k, v) -> addHeader(k, v) } }
 
