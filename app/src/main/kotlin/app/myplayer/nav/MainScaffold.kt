@@ -33,6 +33,8 @@ fun MainScaffold(
     serverId: String,
     caps: ClientCapabilities,
     localThumbnails: Boolean,
+    settingsStore: app.myplayer.core.datastore.SettingsStore,
+    tokenStore: app.myplayer.core.datastore.TokenStore,
     onAddServer: () -> Unit,
     onPlay: (String) -> Unit,
 ) {
@@ -75,11 +77,11 @@ fun MainScaffold(
                     localThumbnails = localThumbnails,
                     onPlay = onPlay,
                 )
-                MainTab.SETTINGS -> MainPlaceholder(
-                    title = "设置",
-                    description = "服务器管理、播放偏好与关于页将在 M5 上线。",
-                    actionText = "添加服务器",
-                    onAction = onAddServer,
+                MainTab.SETTINGS -> SettingsDestination(
+                    settingsStore = settingsStore,
+                    serverConfigStore = serverConfigStore,
+                    tokenStore = tokenStore,
+                    onAddServer = onAddServer,
                 )
             }
         }

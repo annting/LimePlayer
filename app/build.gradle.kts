@@ -57,6 +57,7 @@ dependencies {
     implementation(project(":feature:lock"))
     implementation(project(":feature:player"))
     implementation(project(":feature:server"))
+    implementation(project(":feature:settings"))
 
     // 媒体会话（任务 2-4）：通知栏 / 锁屏控制的 MediaSessionService
     implementation(libs.androidx.media3.session)

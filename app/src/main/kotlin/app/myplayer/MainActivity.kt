@@ -66,7 +66,14 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MyPlayerTheme {
+            // 主题三态（`01` §6 外观）：跟随系统 / 亮 / 暗 —— 设置页改动即时生效
+            val themeSettings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = null)
+            val darkTheme = when (themeSettings?.themeMode) {
+                app.myplayer.core.datastore.ThemeMode.LIGHT -> false
+                app.myplayer.core.datastore.ThemeMode.DARK -> true
+                else -> androidx.compose.foundation.isSystemInDarkTheme()
+            }
+            MyPlayerTheme(darkTheme = darkTheme) {
                 // 显式主题背景 + safeDrawing insets：edge-to-edge 下所有页面统一避让
                 // 状态栏/导航条，否则顶部内容会被状态栏挤压（2026-10-17 真机实测）。
                 Surface(

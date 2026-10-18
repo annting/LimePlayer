@@ -47,4 +47,5 @@ include(
     ":feature:lock",
     ":feature:player",
     ":feature:server",
+    ":feature:settings",
 )

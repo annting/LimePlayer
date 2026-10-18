@@ -182,6 +182,8 @@ fun AppNavHost(
                     serverId = sid,
                     caps = clientCapabilities,
                     localThumbnails = localThumbnails,
+                    settingsStore = settingsStore,
+                    tokenStore = tokenStore,
                     onAddServer = { nav.navigate(Routes.ADD_SERVER) },
                     onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
                 )
@@ -241,6 +243,48 @@ private suspend fun loadPosterWithFallback(
         return thumbs.image(item)
     }
     return remote ?: ImageSource.None
+}
+
+/** 设置 tab：服务器管理 + 全部设置项（`01` §6 / 任务 5-1、5-2）。 */
+@Composable
+internal fun SettingsDestination(
+    settingsStore: app.myplayer.core.datastore.SettingsStore,
+    serverConfigStore: ServerConfigStore,
+    tokenStore: TokenStore,
+    onAddServer: () -> Unit,
+) {
+    val vm: app.myplayer.feature.settings.SettingsViewModel = viewModel(
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                app.myplayer.feature.settings.SettingsViewModel(settingsStore, serverConfigStore, tokenStore) as T
+        },
+    )
+    val state by vm.state.collectAsStateWithLifecycle()
+    app.myplayer.feature.settings.SettingsScreen(
+        state = state,
+        onSetActiveServer = vm::setActiveServer,
+        onDeleteServer = vm::deleteServer,
+        onAddServer = onAddServer,      // 复用外层 ADD_SERVER 路由（含探测 + 登录）
+        onThemeMode = vm::setThemeMode,
+        onDefaultSpeed = vm::setDefaultSpeed,
+        onKeepBackgroundPlayback = vm::setKeepBackgroundPlayback,
+        onDoubleTapSeek = vm::setDoubleTapSeekMillis,
+        onAutoPlayNext = vm::setAutoPlayNext,
+        onScreenOrientation = vm::setScreenOrientation,
+        onDefaultAspectRatio = vm::setDefaultAspectRatio,
+        onSubtitleStyle = vm::setSubtitleStyle,
+        onAppLockEnabled = vm::setAppLockEnabled,
+        onUnlockGrace = vm::setUnlockGraceMillis,
+        onHideRecentsSnapshot = vm::setHideRecentsSnapshot,
+        onLocalThumbnails = vm::setLocalThumbnails,
+        onSearchFuzzyPinyin = vm::setSearchFuzzyPinyin,
+        onSearchTraditionalSimplified = vm::setSearchTraditionalSimplified,
+        onAllowCleartextHttp = vm::setAllowCleartextHttp,
+        onTrustSelfSignedCert = vm::setTrustSelfSignedCert,
+        onLibraryDisplayMode = vm::setLibraryDisplayMode,
+        onBack = { /* tab 页无返回 */ },
+    )
 }
 
 /** 搜索 tab：本地索引 + 输入即搜（任务 3-5 / 3-6）。 */
