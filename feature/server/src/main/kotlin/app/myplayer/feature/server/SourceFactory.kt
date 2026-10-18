@@ -7,6 +7,8 @@ import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.SourceType
 import app.myplayer.source.emby.EmbySource
 import app.myplayer.source.jellyfin.JellyfinSource
+import app.myplayer.source.fnos.FnClient
+import app.myplayer.source.fnos.FnSource
 import okhttp3.OkHttpClient
 
 /**
@@ -45,6 +47,11 @@ class SourceFactory(
                 deviceId = deviceId,
                 // 前缀留空；飞牛 / 反代实测有前缀时在 ServerConfig 加字段后传进来（`02` §R4）
                 prefix = "",
+            )
+            SourceType.FNOS -> FnSource(
+                client = FnClient(baseUrl = config.baseUrl).also { it.setToken(token) },
+                baseUrl = config.baseUrl,
+                serverId = config.id,
             )
             // LOCAL 在 L2。
             else -> null

@@ -42,6 +42,7 @@ include(
     ":source:httpapi",
     ":source:emby",
     ":source:jellyfin",
+    ":source:fnos",
     ":feature:library",
     ":feature:lock",
     ":feature:player",

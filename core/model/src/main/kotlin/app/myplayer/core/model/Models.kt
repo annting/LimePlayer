@@ -7,7 +7,7 @@ package app.myplayer.core.model
  * 新增字段需同时更新规范、`05-接口契约.md` 的字段映射与数据库表结构。
  */
 
-enum class SourceType { EMBY, JELLYFIN, LOCAL }
+enum class SourceType { EMBY, JELLYFIN, /** 飞牛影视（fnOS Media Center，私有 API + authx 签名）。 */ FNOS, LOCAL }
 
 enum class ImageKind { POSTER, BACKDROP, THUMB, LOGO }
 
