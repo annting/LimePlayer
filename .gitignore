@@ -31,3 +31,5 @@ Thumbs.db
 
 # ---- 交付产物（APK 等，不入库）----
 dist/
+# 本地敏感值（飞牛密钥等）
+docs/LOCAL_SECRETS.md
