@@ -33,3 +33,6 @@ Thumbs.db
 dist/
 # 本地敏感值（飞牛密钥等）
 docs/LOCAL_SECRETS.md
+
+# git filter-branch 残留（勿入库）
+.git-rewrite/

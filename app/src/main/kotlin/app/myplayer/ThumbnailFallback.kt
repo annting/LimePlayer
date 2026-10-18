@@ -50,6 +50,9 @@ class LocalThumbnailProvider(
 
     private fun extract(item: MediaItemDto, target: File): ImageSource {
         val src = source ?: return ImageSource.None
+        // 飞牛影视只有 HLS 出口，且协商（play/play）会在服务端真起转码任务 —— 直接放弃抽帧，
+        // 用服务端海报 + 占位兜底（实测：列表逐条协商会把 NAS 转码进程堆满）。
+        if (src.type == app.myplayer.core.model.SourceType.FNOS) return ImageSource.None
         val plan = runCatching { kotlinx.coroutines.runBlocking { src.planPlayback(item, caps) } }.getOrNull()
         val direct = plan as? PlaybackPlan.Direct ?: return ImageSource.None
         // HLS（.m3u8）不抽帧：片段时间轴不连续，**且有的源（飞牛影视）协商 HLS 会在服务端真起一个

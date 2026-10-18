@@ -162,16 +162,18 @@ class FnSourceTest {
         assertThat(server.requestCount).isEqualTo(afterFirst)
     }
 
-    @Test fun `进度上报带叶节点 guid 与秒数`() = runBlocking {
+    @Test fun `进度上报带叶节点 guid 秒数与 play_link`() = runBlocking {
         enqueueFolderAndPlayInfo()
+        server.enqueue(MockResponse().setBody("""{"code":0,"msg":"","data":{"play_link":"/v/media/abc/preset.m3u8"}}"""))
         server.enqueue(MockResponse().setBody("""{"code":0,"msg":"","data":null}"""))
 
         val src = source()
         val detail = src.getItemDetail("F1")
+        src.planPlayback(detail, caps)      // 产生 play_link，缓存给上报用
         src.reportProgress(detail, 30.seconds, PlayState.PLAYING)
 
-        // 前两个请求是 item/ 与 play/info，第三个是 record
-        server.takeRequest(); server.takeRequest()
+        // item/ → play/info → play/play → record
+        repeat(3) { server.takeRequest() }
         val record = server.takeRequest()
         assertThat(record.path).isEqualTo("/v/api/v1/play/record")
         val body = record.body.readUtf8()
@@ -179,5 +181,7 @@ class FnSourceTest {
         assertThat(body).contains("\"media_guid\":\"M1\"")
         assertThat(body).contains("\"ts\":30")
         assertThat(body).contains("\"duration\":49")
+        // play_link 必传：缺了接口照样 code:0，但进度不会落库（2026-10-18 实测）
+        assertThat(body).contains("\"play_link\":\"/v/media/abc/preset.m3u8\"")
     }
 }

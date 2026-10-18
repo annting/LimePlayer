@@ -85,7 +85,8 @@ class FnSource(
             mediaGuid = data.str("media_guid").orEmpty(),
             videoGuid = data.str("video_guid").orEmpty(),
             audioGuid = data.str("audio_guid").orEmpty(),
-            resumeSec = data.int("ts") ?: self?.int("ts") ?: 0,
+            // 续播位置：play/info 的 ts 可能为 null，服务端把进度记在 watched_ts 上
+            resumeSec = data.int("ts") ?: self?.int("ts") ?: self?.int("watched_ts") ?: 0,
             durationSec = leaf?.int("duration") ?: self?.int("duration") ?: 0,
         )
         playableOf[itemId] = playable
@@ -239,6 +240,9 @@ class FnSource(
 
     override suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState) {
         val s = sessions[item.id] ?: return
+        // `play_link` 必传：缺省时接口仍返回 code:0，但进度不会落到条目的 watched_ts 上
+        val link = planCache[item.id]?.first?.uri?.removePrefix(baseUrl)
+            ?: planCache[playableOf[item.id]]?.first?.uri?.removePrefix(baseUrl)
         runCatching {
             client.post(
                 "/v/api/v1/play/record",
@@ -252,6 +256,7 @@ class FnSource(
                     put("bitrate", 0)
                     put("ts", pos.inWholeSeconds.toInt())
                     put("duration", durationOf[item.id] ?: s.durationSec)
+                    link?.let { put("play_link", it) }
                     put("device_id", serverId)
                     put("direct_link_audio_index", 0)
                     put("lan", "zh-CN")
