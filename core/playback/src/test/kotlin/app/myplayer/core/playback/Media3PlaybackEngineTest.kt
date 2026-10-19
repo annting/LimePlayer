@@ -81,4 +81,58 @@ class Media3PlaybackEngineTest {
         ).toMediaItem()
         assertThat(item.localConfiguration?.mimeType).isNull()
     }
+
+    @Test
+    fun `多条外挂字幕都写进 SubtitleConfiguration`() {
+        val plan = PlaybackPlan.Direct(
+            uri = "http://nas/video",
+            subtitles = listOf(
+                app.myplayer.core.model.ExternalSubtitle(
+                    url = "http://nas/zh.srt",
+                    mimeType = "application/x-subrip",
+                    language = "zh",
+                    label = "Chinese (SRT)",
+                ),
+                app.myplayer.core.model.ExternalSubtitle(
+                    url = "http://nas/en.srt",
+                    mimeType = "application/x-subrip",
+                    language = "en",
+                    label = "English (SRT)",
+                ),
+            ),
+        )
+
+        val subs = plan.toMediaItem(plan.subtitles).localConfiguration?.subtitleConfigurations.orEmpty()
+
+        assertThat(subs).hasSize(2)
+        assertThat(subs.map { it.label }).containsExactly("Chinese (SRT)", "English (SRT)").inOrder()
+        assertThat(subs.map { it.language }).containsExactly("zh", "en").inOrder()
+    }
+
+    @Test
+    fun `选轨能定位到第二个字幕 group 里的轨道`() {
+        // 回归真机 bug：外挂字幕在 ExoPlayer 里**每条各自一个 TrackGroup**，
+        // 只在第一个 group 里找会让第二条及之后的字幕点了完全没反应。
+        val groups = listOf("sub-zh" to 1, "sub-en" to 1)
+
+        assertThat(resolveTrackPosition(groups, "sub-zh:0")).isEqualTo(0 to 0)
+        assertThat(resolveTrackPosition(groups, "sub-en:0")).isEqualTo(1 to 0)
+    }
+
+    @Test
+    fun `选轨能在单 group 多轨里定位任意一条`() {
+        val groups = listOf("audio" to 2, "sub" to 3)
+
+        assertThat(resolveTrackPosition(groups, "sub:2")).isEqualTo(1 to 2)
+        assertThat(resolveTrackPosition(groups, "audio:1")).isEqualTo(0 to 1)
+    }
+
+    @Test
+    fun `选轨遇到未知 id 返回 null`() {
+        val groups = listOf("sub-zh" to 1)
+
+        assertThat(resolveTrackPosition(groups, "sub-en:0")).isNull()
+        assertThat(resolveTrackPosition(groups, "sub-zh:5")).isNull()
+        assertThat(resolveTrackPosition(emptyList(), "sub-zh:0")).isNull()
+    }
 }

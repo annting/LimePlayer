@@ -173,14 +173,19 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
             builder.setTrackTypeDisabled(type, true)
         } else {
             builder.setTrackTypeDisabled(type, false)
-            val group = player.currentTracks.groups.firstOrNull { it.type == type }
-            if (group != null) {
-                for (i in 0 until group.length) {
-                    if ("${group.mediaTrackGroup.id}:$i" == trackId) {
-                        builder.setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, i))
-                        break
-                    }
-                }
+            // 必须遍历**所有**同类型 group：外挂字幕（MediaItem.SubtitleConfiguration）
+            // 在 ExoPlayer 里是各自独立的 TrackGroup，只查第一个 group 会导致
+            // 第二条及以后的字幕点了没反应（真机实测：中文可选、英文无响应）。
+            val sameType = player.currentTracks.groups.withIndex().filter { it.value.type == type }
+            val position = resolveTrackPosition(
+                groups = sameType.map { it.value.mediaTrackGroup.id to it.value.length },
+                trackId = trackId,
+            )
+            if (position != null) {
+                val group = sameType[position.first].value
+                builder.setOverrideForType(
+                    TrackSelectionOverride(group.mediaTrackGroup, position.second)
+                )
             }
         }
         player.trackSelectionParameters = builder.build()
@@ -308,4 +313,24 @@ private fun Tracks.toTrackInfos(): List<TrackInfo> {
         }
     }
     return out
+}
+
+/**
+ * 在「同类型 track group 列表」里定位 [trackId] 对应的 (group 序号, 组内轨序号)。
+ *
+ * 抽成纯函数是为了能被 JVM 单测覆盖：外挂字幕在 ExoPlayer 里是**每轨一个 group**，
+ * 只在第一个 group 里找会导致第二条之后的字幕点了没反应（真机实测 bug）。
+ *
+ * [groups] 每项为 (group.id, 组内轨数)，顺序须与 UI 展示顺序一致。
+ */
+internal fun resolveTrackPosition(
+    groups: List<Pair<String, Int>>,
+    trackId: String,
+): Pair<Int, Int>? {
+    groups.forEachIndexed { groupIndex, (groupId, count) ->
+        for (i in 0 until count) {
+            if ("$groupId:$i" == trackId) return groupIndex to i
+        }
+    }
+    return null
 }
