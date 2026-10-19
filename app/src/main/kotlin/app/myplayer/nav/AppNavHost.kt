@@ -27,6 +27,8 @@ import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.SourceType
+import app.myplayer.feature.detail.DetailRoute
+import app.myplayer.feature.detail.PersonRoute
 import app.myplayer.feature.library.LibraryScreen
 import app.myplayer.feature.library.LibraryViewModel
 import app.myplayer.feature.player.PlayerRoute
@@ -186,13 +188,109 @@ fun AppNavHost(
                     tokenStore = tokenStore,
                     onAddServer = { nav.navigate(Routes.ADD_SERVER) },
                     onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
+                    onOpenDetail = { itemId -> nav.navigate("${Routes.DETAIL}/$itemId") },
                 )
+            }
+        }
+
+        composable(
+            route = "${Routes.DETAIL}/{itemId}",
+            arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
+        ) { entry ->
+            val itemId = entry.arguments?.getString("itemId").orEmpty()
+            val src = source
+            if (src != null && itemId.isNotEmpty()) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                // 缺海报时的本地抽帧兜底（任务 3-7）：与库页同一策略
+                val thumbs = remember(src, serverId, localThumbnails) {
+                    if (localThumbnails) LocalThumbnailProvider(context, src, clientCapabilities) else null
+                }
+                DetailRoute(
+                    itemId = itemId,
+                    source = src,
+                    loadImage = { item, kind ->
+                        val remote = src.image(item, kind, ImageSize.MEDIUM)
+                        if (kind == ImageKind.POSTER && remote is ImageSource.None &&
+                            !item.hasPoster && thumbs != null
+                        ) {
+                            thumbs.image(item)
+                        } else {
+                            remote
+                        }
+                    },
+                    onBack = { nav.popBackStack() },
+                    onPlay = { item -> nav.navigate("${Routes.PLAYER}/${item.id}") },
+                    // 标记已看成功 → 服务端权威 UserData 写回本地缓存（`02` §5.1）
+                    onUserDataChanged = { sid, iid, ud -> repository.updateUserData(sid, iid, ud) },
+                    // 服务端删除成功 → 清理本地缓存并返回上一页（`03` §6.3）
+                    onDeleted = { item ->
+                        scope.launch {
+                            repository.deleteItem(item.serverId, item.id)
+                            nav.popBackStack()
+                        }
+                    },
+                    onPersonClick = { person ->
+                        val name = android.net.Uri.encode(person.name)
+                        nav.navigate("${Routes.PERSON}/${person.id}?name=$name")
+                    },
+                )
+            } else {
+                // 源未就绪（正常流程到不了）：不做空页，直接退回
+                LaunchedEffect(Unit) { nav.popBackStack() }
+            }
+        }
+
+        composable(
+            route = "${Routes.PERSON}/{personId}?name={name}",
+            arguments = listOf(
+                navArgument("personId") { type = NavType.StringType },
+                navArgument("name") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+            ),
+        ) { entry ->
+            val personId = entry.arguments?.getString("personId").orEmpty()
+            val personName = android.net.Uri.decode(entry.arguments?.getString("name").orEmpty())
+            val src = source
+            if (src != null && personId.isNotEmpty()) {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val thumbs = remember(src, serverId, localThumbnails) {
+                    if (localThumbnails) LocalThumbnailProvider(context, src, clientCapabilities) else null
+                }
+                PersonRoute(
+                    personId = personId,
+                    personName = personName.ifBlank { "演员" },
+                    source = src,
+                    loadImage = { item, kind ->
+                        val remote = src.image(item, kind, ImageSize.MEDIUM)
+                        if (kind == ImageKind.POSTER && remote is ImageSource.None &&
+                            !item.hasPoster && thumbs != null
+                        ) {
+                            thumbs.image(item)
+                        } else {
+                            remote
+                        }
+                    },
+                    onBack = { nav.popBackStack() },
+                    onItemClick = { item -> nav.navigate("${Routes.DETAIL}/${item.id}") },
+                )
+            } else {
+                // 源未就绪（正常流程到不了）：不做空页，直接退回
+                LaunchedEffect(Unit) { nav.popBackStack() }
             }
         }
 
         composable(
             route = "${Routes.PLAYER}/{itemId}",
             arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
+            // 播放页进出**不做淡入淡出**：视频面是 SurfaceView（独立窗口图层），
+            // 不参与 Compose 的 alpha 转场 —— 淡出期间画面仍不透明地盖在列表上方，
+            // 看起来就是「视频与列表重叠」（2026-10-19 真机 bug）。瞬时切换最干净。
+            enterTransition = { androidx.compose.animation.EnterTransition.None },
+            exitTransition = { androidx.compose.animation.ExitTransition.None },
+            popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+            popExitTransition = { androidx.compose.animation.ExitTransition.None },
         ) { entry ->
             val itemId = entry.arguments?.getString("itemId").orEmpty()
             val src = source
@@ -312,6 +410,7 @@ internal fun SearchDestination(
     caps: ClientCapabilities,
     localThumbnails: Boolean,
     onPlay: (String) -> Unit,
+    onOpenDetail: (String) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val thumbs = remember(source, serverId, localThumbnails) {
@@ -335,6 +434,7 @@ internal fun SearchDestination(
         onClear = vm::clearQuery,
         loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
         onPlay = { item -> onPlay(item.id) },
+        onOpenDetail = { item -> onOpenDetail(item.id) },
     )
 }
 
@@ -348,6 +448,7 @@ internal fun LibraryDestination(
     caps: ClientCapabilities,
     localThumbnails: Boolean,
     onPlay: (String) -> Unit,
+    onOpenDetail: (String) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     // 缺海报时的本地抽帧兜底（任务 3-7）：开关关闭或没有源时不构造
@@ -375,6 +476,7 @@ internal fun LibraryDestination(
         loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
         onSelectLibrary = vm::selectLibrary,
         onPlay = { item -> onPlay(item.id) },
+        onOpenDetail = { item -> onOpenDetail(item.id) },
         onSort = vm::setSort,
         onFilter = vm::setFilter,
         onResetFilter = vm::resetFilter,

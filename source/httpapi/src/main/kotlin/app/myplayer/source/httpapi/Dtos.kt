@@ -35,6 +35,12 @@ data class BaseItemDto(
     @SerialName("DateCreated") val dateCreated: String? = null,
     @SerialName("CommunityRating") val communityRating: Float? = null,
     @SerialName("OfficialRating") val officialRating: String? = null,
+    /** 制作年份（详情页展示用，`02` §4.2：详情专属字段不同步入库）。 */
+    @SerialName("ProductionYear") val productionYear: Int? = null,
+    /** 简介长文（详情页展示用，`02` §4.2：详情专属字段不同步入库）。 */
+    @SerialName("Overview") val overview: String? = null,
+    /** 服务端逐账号下发的删除权限（详情页删除按钮以此为准，`02` §4.2）。 */
+    @SerialName("CanDelete") val canDelete: Boolean = false,
     @SerialName("CollectionType") val collectionType: String? = null,
     @SerialName("ChildCount") val childCount: Int? = null,
     /** 有 "Primary" 键 = 有条目海报；用于 `MediaItemDto.hasPoster`，缺海报时不发无意义的图片请求。 */
@@ -55,8 +61,11 @@ data class UserDataDto(
 
 @Serializable
 data class PersonDto(
+    @SerialName("Id") val id: String? = null,
     @SerialName("Name") val name: String? = null,
+    @SerialName("Role") val role: String? = null,
     @SerialName("Type") val type: String? = null,
+    @SerialName("PrimaryImageTag") val primaryImageTag: String? = null,
 )
 
 @Serializable
@@ -65,6 +74,8 @@ data class MediaSourceInfoDto(
     @SerialName("Size") val size: Long? = null,
     @SerialName("Bitrate") val bitrate: Int? = null,
     @SerialName("Container") val container: String? = null,
+    /** 服务端上的完整文件路径（详情页「文件信息」展示；排障用）。 */
+    @SerialName("Path") val path: String? = null,
     @SerialName("Width") val width: Int? = null,
     @SerialName("Height") val height: Int? = null,
     @SerialName("VideoCodec") val videoCodec: String? = null,
@@ -82,6 +93,17 @@ data class MediaStreamDto(
     @SerialName("Type") val type: String? = null,
     @SerialName("Index") val index: Int = 0,
     @SerialName("Codec") val codec: String? = null,
+    @SerialName("Width") val width: Int? = null,
+    @SerialName("Height") val height: Int? = null,
+    /** 平均帧率（视频流）。 */
+    @SerialName("AverageFrameRate") val averageFrameRate: Float? = null,
+    @SerialName("BitDepth") val bitDepth: Int? = null,
+    /** 流码率（bit/s；总码率在 MediaSource 层的 [MediaSourceInfoDto.bitrate]）。 */
+    @SerialName("BitRate") val bitRate: Int? = null,
+    /** 声道数（音频流）。 */
+    @SerialName("Channels") val channels: Int? = null,
+    /** 采样率 Hz（音频流）。 */
+    @SerialName("SampleRate") val sampleRate: Int? = null,
     @SerialName("Language") val language: String? = null,
     @SerialName("DisplayTitle") val displayTitle: String? = null,
     @SerialName("Title") val title: String? = null,

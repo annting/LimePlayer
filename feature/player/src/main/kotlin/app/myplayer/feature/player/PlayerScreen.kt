@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -158,8 +159,20 @@ fun PlayerScreen(
             )
             // 字幕渲染层（任务：字幕渲染）：Media3 SubtitleView 直接消费引擎 cues，
             // 与视频面同区域对齐，随画面比例模式一起缩放。
+            //
+            // 字号与位置必须显式指定（2026-10-19 真机反馈）：
+            // · 不设字号时 SubtitleView 跟随系统字幕大小，用户系统里调过就会「特别大」；
+            //   固定 16sp 并忽略内嵌字号（外挂 srt 本身也没有字号）。
+            // · cue 默认贴在视图最底，即视频画面下沿；加 bottomPaddingFraction 抬到
+            //   画面下方约 10% 处，既避开系统手势区也不压住控制栏。
             androidx.compose.ui.viewinterop.AndroidView(
-                factory = { ctx -> androidx.media3.ui.SubtitleView(ctx) },
+                factory = { ctx ->
+                    androidx.media3.ui.SubtitleView(ctx).apply {
+                        setApplyEmbeddedFontSizes(false)
+                        setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
+                        setBottomPaddingFraction(0.10f)
+                    }
+                },
                 update = { view -> vm.attachSubtitleView(view) },
                 modifier = Modifier.align(Alignment.Center).then(videoModifier),
             )
@@ -178,6 +191,22 @@ fun PlayerScreen(
 
         // 亮度 / 音量指示器
         SystemIndicatorOverlay(indicator, Modifier.align(Alignment.Center))
+
+        // 双击 seek 提示（`03` §5.5）：正中闪现 1s 的「+10 秒 / -10 秒」。
+        // 上抬 76dp 是为了避开中部控制层的播放按钮 —— 控制层可见时双击同样要给得出反馈。
+        state.seekHint?.let { hint ->
+            Text(
+                hint,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = (-76).dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 22.dp, vertical = 14.dp),
+            )
+        }
 
         // 控制层
         AnimatedVisibility(
@@ -336,8 +365,8 @@ private fun GestureLayer(
                         vm.notifyInteraction()
                     },
                     onDoubleTap = { offset ->
-                        if (offset.x < size.width / 2f) vm.seekBy(-DOUBLE_TAP_SEEK_MS)
-                        else vm.seekBy(DOUBLE_TAP_SEEK_MS)
+                        if (offset.x < size.width / 2f) vm.seekByWithHint(-DOUBLE_TAP_SEEK_MS)
+                        else vm.seekByWithHint(DOUBLE_TAP_SEEK_MS)
                     },
                 )
             }

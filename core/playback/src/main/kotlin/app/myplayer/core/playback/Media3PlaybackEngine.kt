@@ -202,10 +202,19 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
 
     override fun stopSession() {
         if (released) return
-        player.stop()
-        player.clearMediaItems()
+        // 先断开视频面：SurfaceView 是独立窗口图层，Compose 的转场 / alpha 影响不到它；
+        // 退出播放页时若还挂着 surface，就会看到视频残留在下层页面上方（2026-10-19 真机 bug）。
+        player.setVideoSurface(null)
         subtitleView?.setCues(emptyList())
         _state.update { EngineState() }   // 会话结束：清空上一次的 error / tracks / position
+        // stop() 会同步等待内部播放线程收尾（网络流可达数百毫秒），放到下一帧执行：
+        // 先把 Back 的导航让出去，避免"点返回卡一下"。
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            if (!released) {
+                player.stop()
+                player.clearMediaItems()
+            }
+        }
     }
 
     override fun release() {

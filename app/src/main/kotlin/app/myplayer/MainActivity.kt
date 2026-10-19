@@ -103,15 +103,31 @@ class MainActivity : ComponentActivity() {
         //   消除「回前台先闪一下视频再出现锁屏」。
         // · ON_STOP 兜底（锁屏键 / 其它 app 完全覆盖 · 画中画不会触发 onStop）。
         // · ON_START 按宽限期决定是否免解锁。
+        //
+        // ⚠️ key 只放 `owner`，**不能**放 `settings`：LifecycleRegistry.addObserver 会
+        // 立刻向新观察者回放一遍 ON_CREATE → ON_START。若把 settings 当 key，
+        // 用户每改一个设置项（写 DataStore → settings 变化 → effect 重建）都会收到一次
+        // 伪 ON_START，从而在设置页里被反复要求画图案解锁（2026-10-19 真机 bug）。
+        // 需要最新设置时用 rememberUpdatedState 读取，而非重建 effect。
+        val latestSettings by rememberUpdatedState(settings)
         val owner = LocalLifecycleOwner.current
-        DisposableEffect(owner, settings) {
+        DisposableEffect(owner) {
+            // 只有真正「进过后台」再回来才重新判定；首次注册的回放不算
+            var wentToBackground = false
             val observer = LifecycleEventObserver { _, event ->
-                val current = settings   // 委托属性不能智能转换，先落成局部值
+                val current = latestSettings   // 委托属性不能智能转换，先落成局部值
                 if (current?.appLockEnabled != true) return@LifecycleEventObserver
                 when (event) {
-                    Lifecycle.Event.ON_STOP -> if (!isInPictureInPictureMode) unlockedState.value = false
-                    Lifecycle.Event.ON_START -> unlockedState.value =
-                        !shouldLock(true, lastUnlockAt, System.currentTimeMillis(), current.unlockGraceMillis)
+                    Lifecycle.Event.ON_STOP -> {
+                        wentToBackground = true
+                        if (!isInPictureInPictureMode) unlockedState.value = false
+                    }
+                    Lifecycle.Event.ON_START -> if (wentToBackground) {
+                        wentToBackground = false
+                        unlockedState.value = !shouldLock(
+                            true, lastUnlockAt, System.currentTimeMillis(), current.unlockGraceMillis,
+                        )
+                    }
                     else -> Unit
                 }
             }
