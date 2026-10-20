@@ -1,11 +1,15 @@
 package app.myplayer.feature.library
 
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaLibrary
 import app.myplayer.core.model.SourceType
+import com.google.common.truth.Truth.assertThat
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -40,6 +44,7 @@ class LibraryScreenTest {
                 loadImage = { ImageSource.None },
                 onSelectLibrary = {},
                 onPlay = {},
+                onOpenDetail = {},
             )
         }
         compose.waitForIdle() // 完成测量与布局即视为通过
@@ -54,6 +59,7 @@ class LibraryScreenTest {
                 loadImage = { ImageSource.None },
                 onSelectLibrary = {},
                 onPlay = {},
+                onOpenDetail = {},
             )
         }
         compose.waitForIdle()
@@ -73,9 +79,41 @@ class LibraryScreenTest {
                 loadImage = { ImageSource.None },
                 onSelectLibrary = {},
                 onPlay = {},
+                onOpenDetail = {},
             )
         }
         compose.waitForIdle()
         compose.onRoot().assertExists()
+    }
+
+    /** 两级入口（`03` §6.1）：中央播放按钮直接播放，卡片其余区域进详情，两者互不串台。 */
+    @Test
+    fun `点中央播放按钮直播_点卡片其他区域进详情`() {
+        var played = ""
+        var opened = ""
+        compose.setContent {
+            LibraryScreen(
+                state = LibraryUiState(
+                    libraries = listOf(sampleLibrary),
+                    selectedLibraryId = sampleLibrary.id,
+                    items = listOf(sampleItem),
+                    loading = false,
+                ),
+                loadImage = { ImageSource.None },
+                onSelectLibrary = {},
+                onPlay = { played = it.id },
+                onOpenDetail = { opened = it.id },
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithContentDescription("播放 沙丘").performClick()
+        assertThat(played).isEqualTo("i1")
+        assertThat(opened).isEmpty()          // 内层按钮消费点击，不冒泡到卡片
+
+        // 「卡片其他区域」取标题行：卡片 clickable 合并了子节点语义，合并树里的卡片节点
+        // 几何中心正好压在海报中央的播放按钮上，只有未合并树的标题节点才落在按钮之外。
+        compose.onNodeWithText("沙丘", useUnmergedTree = true).performClick()
+        assertThat(opened).isEqualTo("i1")
     }
 }

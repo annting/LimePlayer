@@ -43,6 +43,7 @@ include(
     ":source:emby",
     ":source:jellyfin",
     ":source:fnos",
+    ":feature:detail",
     ":feature:library",
     ":feature:lock",
     ":feature:player",

@@ -83,6 +83,43 @@ abstract class HttpMediaSource(
         }.getOrElse { AdjacentEpisodes() }   // 网络失败不阻塞播放
     }
 
+    /** 详情页分季列表：带缩略图与简介拉全剧集的集（未登录时返回空列表，不抛错）。 */
+    override suspend fun getEpisodes(seriesId: String): List<MediaItemDto> {
+        val userId = api.config.userId ?: return emptyList()
+        return api.getEpisodes(seriesId, userId, withDetailFields = true)
+            .map { mapItem(it, libraryId = null) }
+    }
+
+    // ---- 详情页写操作与人物页（`05` §2.2，详情页二期）----
+
+    /** Emby / Jellyfin 均支持 `PlayedItems` 标记已看（飞牛不支持，走 `MediaSource` 默认实现）。 */
+    override val canMarkPlayed: Boolean get() = true
+
+    override suspend fun markPlayed(item: MediaItemDto, played: Boolean): UserData {
+        val userId = requireNotNull(api.config.userId) { "登录后才能标记已看" }
+        val dto = if (played) api.markPlayed(item.id, userId) else api.unmarkPlayed(item.id, userId)
+        return UserData(
+            isPlayed = dto.played,
+            resumePositionTicks = Ticks(dto.playbackPositionTicks),
+            isFavorite = dto.isFavorite,
+        )
+    }
+
+    /** 删除条目：204 即成功；无权限时服务端 401/403 以 [ApiException] 上抛给 UI 呈现。 */
+    override suspend fun deleteItem(item: MediaItemDto): Boolean {
+        api.deleteItem(item.id)
+        return true
+    }
+
+    override suspend fun getPersonWorks(personId: String): List<MediaItemDto> {
+        val userId = api.config.userId ?: return emptyList()
+        return api.getPersonWorks(personId, userId).map { mapItem(it, libraryId = null) }
+    }
+
+    /** 人物头像与条目图片同端点形态（Primary），鉴权走请求头。 */
+    override suspend fun personImage(personId: String, size: ImageSize): ImageSource =
+        ImageSource.Remote(api.personImageUrl(personId, size.px), api.authHeaders())
+
     private suspend fun plan(
         item: MediaItemDto,
         caps: ClientCapabilities,

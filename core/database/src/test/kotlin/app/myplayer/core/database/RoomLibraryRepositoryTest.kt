@@ -90,4 +90,35 @@ class RoomLibraryRepositoryTest {
         assertThat(libs.first().itemCount).isEqualTo(3)
         assertThat(libs.first().collectionType).isEqualTo("movies")
     }
+
+    // ---- 详情页写操作写回（`02` §5.1，详情页二期）----
+
+    @Test fun `updateUserData 只改观看三字段且其余列不变`() = runTest {
+        val original = item("i1").copy(cast = listOf("提莫西"))
+        db.mediaItemDao().upsertAll(listOf(original.toEntity()))
+
+        repo.updateUserData("srv", "i1", UserData(isPlayed = true, resumePositionTicks = Ticks.ofSeconds(30)))
+
+        val after = db.mediaItemDao().get("srv", "i1")!!.toDto()
+        assertThat(after.userData.isPlayed).isTrue()
+        assertThat(after.userData.resumePositionTicks).isEqualTo(Ticks.ofSeconds(30))
+        // 其余列（标题 / 演职员）不受影响
+        assertThat(after.title).isEqualTo("Ti1")
+        assertThat(after.cast).containsExactly("提莫西")
+    }
+
+    @Test fun `updateUserData 条目不在缓存时静默跳过`() = runTest {
+        // 详情直查的条目可能从未进过列表缓存 —— 不允许 INSERT，也不能崩
+        repo.updateUserData("srv", "ghost", UserData(isPlayed = true))
+        assertThat(db.mediaItemDao().get("srv", "ghost")).isNull()
+    }
+
+    @Test fun `deleteItem 清理单条且不影响同库其他条目`() = runTest {
+        repo.syncItems(FakeSource(allItems = listOf(item("i1"), item("i2")), reportedTotal = 2), "lib1")
+
+        repo.deleteItem("srv", "i1")
+
+        assertThat(db.mediaItemDao().get("srv", "i1")).isNull()
+        assertThat(db.mediaItemDao().get("srv", "i2")).isNotNull()
+    }
 }

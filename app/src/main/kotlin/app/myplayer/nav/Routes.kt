@@ -5,5 +5,7 @@ object Routes {
     const val ADD_SERVER = "addServer"   // 任务 1-13
     const val LOGIN = "login"            // 任务 1-13
     const val MAIN = "main"              // 登录后主界面（底部导航 4 tab，任务 2-8）
+    const val DETAIL = "detail"          // detail/{itemId}（任务 5-5）
+    const val PERSON = "person"          // person/{personId}?name=xxx（详情页二期 §6.3.1）
     const val PLAYER = "play"            // play/{itemId}（任务 2-2）
 }

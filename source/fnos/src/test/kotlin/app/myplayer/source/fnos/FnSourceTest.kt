@@ -126,6 +126,54 @@ class FnSourceTest {
         assertThat(source().image(item, ImageKind.POSTER, ImageSize.SMALL)).isEqualTo(ImageSource.None)
     }
 
+    @Test fun `详情透出分辨率档位与评分`() = runBlocking {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"code":0,"msg":"","data":{"guid":"F2","title":"有元数据的片","type":"Directory",
+                "play_item_guid":"V2","poster_list":["/d5/07/poster-y.webp"],
+                "is_watched":0,"watched_ts":0,"duration":0,
+                "media_stream":{"resolutions":["480p"]},"vote_average":"7.5"}}""".trimIndent()
+            )
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"code":0,"msg":"","data":{"guid":"V2","type":"Video","ts":0,
+                "media_guid":"M2","video_guid":"VD2","audio_guid":"A2","subtitle_guid":"",
+                "play_config":{"skip_opening":null,"skip_ending":null},
+                "item":{"guid":"V2","title":"V2.mp4","duration":100}}}""".trimIndent()
+            )
+        )
+        val detail = source().getItemDetail("F2")
+
+        // 档位原串直接展示（飞牛无精确像素），像素高度给排序
+        assertThat(detail.resolutionLabel).isEqualTo("480p")
+        assertThat(detail.height).isEqualTo(480)
+        // vote_average 是字符串；"7.5" → 7.5f
+        assertThat(detail.communityRating).isEqualTo(7.5f)
+    }
+
+    @Test fun `未刮削的评分零值视为无评分`() = runBlocking {
+        server.enqueue(
+            MockResponse().setBody(
+                """{"code":0,"msg":"","data":{"guid":"F3","title":"无刮削","type":"Directory",
+                "play_item_guid":"V3","poster_list":["/d5/07/poster-z.webp"],
+                "is_watched":0,"watched_ts":0,"duration":0,
+                "media_stream":{"resolutions":["1080p"]},"vote_average":"0"}}""".trimIndent()
+            )
+        )
+        server.enqueue(
+            MockResponse().setBody(
+                """{"code":0,"msg":"","data":{"guid":"V3","type":"Video","ts":0,
+                "media_guid":"M3","video_guid":"VD3","audio_guid":"A3","subtitle_guid":"",
+                "play_config":{"skip_opening":null,"skip_ending":null},
+                "item":{"guid":"V3","title":"V3.mp4","duration":10}}}""".trimIndent()
+            )
+        )
+        val detail = source().getItemDetail("F3")
+        assertThat(detail.communityRating).isNull()
+        assertThat(detail.resolutionLabel).isEqualTo("1080p")
+    }
+
     @Test fun `列表映射分辨率档位与观看状态`() = runBlocking {
         server.enqueue(
             MockResponse().setBody(

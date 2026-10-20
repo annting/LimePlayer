@@ -55,6 +55,7 @@ fun SearchScreen(
     onClear: () -> Unit,
     loadImage: suspend (MediaItemDto) -> ImageSource,
     onPlay: (MediaItemDto) -> Unit,
+    onOpenDetail: (MediaItemDto) -> Unit,
     modifier: Modifier = Modifier,
     autoFocus: Boolean = true,
 ) {
@@ -147,6 +148,7 @@ fun SearchScreen(
                             item = item,
                             loadImage = loadImage,
                             onPlay = { onPlay(it); onSubmit() },
+                            onOpenDetail = { onOpenDetail(it); onSubmit() },
                         )
                     }
                 }

@@ -40,6 +40,37 @@ interface MediaSource {
      * 同季相邻集（`03` §5.7 连播用）。默认无相邻集 —— 电影 / 非剧集内容天然返回空。
      */
     suspend fun getAdjacentEpisodes(item: MediaItemDto): AdjacentEpisodes = AdjacentEpisodes()
+
+    /**
+     * 剧集详情页的分季列表（`03` §6.3）。默认返回空列表 —— 电影 / 非剧集内容天然为空，
+     * 老实现无需改动（与 [getAdjacentEpisodes] 同风格，见 `02` §5.1）。
+     */
+    suspend fun getEpisodes(seriesId: String): List<MediaItemDto> = emptyList()
+
+    /**
+     * 写操作能力位：是否支持「标记已播放」（`02` §5.1）。UI 据此显隐按钮；
+     * 不支持的源（飞牛 / 本机）保持默认 false。支持位为 false 时 [markPlayed] 不应被调用。
+     */
+    val canMarkPlayed: Boolean get() = false
+
+    /**
+     * 标记 / 取消「已播放」，返回**服务端权威 [UserData]** 供本地缓存写回（`02` §5.1）。
+     * 默认实现直接抛 —— [canMarkPlayed] == false 的源不应走到这里。
+     */
+    suspend fun markPlayed(item: MediaItemDto, played: Boolean): UserData =
+        throw UnsupportedOperationException("该源不支持标记已看")
+
+    /**
+     * 从服务器删除条目（`02` §5.1）。返回 false = 该源不支持（UI 不显示按钮，与 `item.canDelete` 双重把关）；
+     * true = 已删除，调用方随后清理本地缓存。默认不支持。
+     */
+    suspend fun deleteItem(item: MediaItemDto): Boolean = false
+
+    /** 人物页作品列表（`03` §6.3.1）。默认空 —— 无人物数据的源（飞牛）天然为空。 */
+    suspend fun getPersonWorks(personId: String): List<MediaItemDto> = emptyList()
+
+    /** 人物头像（默认 [ImageSource.None] ⇒ UI 用姓名首字占位）。 */
+    suspend fun personImage(personId: String, size: ImageSize): ImageSource = ImageSource.None
 }
 
 /** 同季相邻集（连播数据源）；不存在的方向为 null。 */
@@ -57,4 +88,13 @@ interface LibraryRepository {
     fun observeAllItems(serverId: String): Flow<List<MediaItemDto>> = kotlinx.coroutines.flow.flowOf(emptyList())
     suspend fun syncLibraries(source: MediaSource)
     suspend fun syncItems(source: MediaSource, libraryId: String)
+
+    /**
+     * 观看状态单条写回（`02` §5.1，详情页二期）：标记已看成功后用**服务端权威 [UserData]**
+     * 更新本地缓存，让列表页的「已看」角标与进度即时一致。默认空实现（老实现无需改动）。
+     */
+    suspend fun updateUserData(serverId: String, itemId: String, userData: UserData) = Unit
+
+    /** 服务端删除成功后清理本地缓存（详情页二期）。默认空实现（老实现无需改动）。 */
+    suspend fun deleteItem(serverId: String, itemId: String) = Unit
 }

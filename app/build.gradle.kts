@@ -54,6 +54,7 @@ dependencies {
     implementation(project(":source:httpapi"))
     implementation(project(":source:emby"))
     implementation(project(":feature:library"))
+    implementation(project(":feature:detail"))
     implementation(project(":feature:lock"))
     implementation(project(":feature:player"))
     implementation(project(":feature:server"))

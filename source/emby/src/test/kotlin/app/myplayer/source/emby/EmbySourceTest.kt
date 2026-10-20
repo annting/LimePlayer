@@ -87,4 +87,79 @@ class EmbySourceTest {
         val item = MediaItemDto(id = "i1", serverId = "srv-emby", sourceType = SourceType.EMBY, title = "Dune", hasPoster = false)
         assertThat(source.image(item, ImageKind.POSTER, ImageSize.MEDIUM)).isEqualTo(ImageSource.None)
     }
+
+    /** 详情页分季列表：带图与简介拉整部剧的集，并映射季号 / 集号。 */
+    @Test fun `getEpisodes 映射分集并带图带简介`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Items":[{"Id":"e1","Name":"第一集","ParentIndexNumber":1,"IndexNumber":1,"Overview":"开场","ImageTags":{"Primary":"t"}}],"TotalRecordCount":1}"""))
+        val episodes = source.getEpisodes("s1")
+        assertThat(episodes.single().id).isEqualTo("e1")
+        assertThat(episodes.single().seasonNumber).isEqualTo(1)
+        assertThat(episodes.single().episodeNumber).isEqualTo(1)
+        assertThat(episodes.single().overview).isEqualTo("开场")
+        assertThat(episodes.single().hasPoster).isTrue()
+        val path = server.takeRequest().path!!
+        assertThat(path).contains("EnableImages=true")
+        assertThat(path).contains("Overview")
+    }
+
+    @Test fun `未登录时 getEpisodes 返回空列表`() = runTest {
+        val anonymous = EmbySource.create(
+            client = OkHttpClient(),
+            baseUrl = server.url("/").toString().trimEnd('/'),
+            serverId = "srv-emby", token = null, userId = null, deviceId = "d1",
+        )
+        assertThat(anonymous.getEpisodes("s1")).isEmpty()
+    }
+
+    // ---- 详情页写操作与人物页（`05` §2.2 / §5.1，详情页二期）----
+
+    @Test fun `canMarkPlayed 为 true`() {
+        assertThat(source.canMarkPlayed).isTrue()
+    }
+
+    /** markPlayed：POST 端点 + 服务端权威 UserData 原样映射。 */
+    @Test fun `markPlayed 返回服务端权威 UserData`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Played":true,"PlaybackPositionTicks":0,"IsFavorite":false,"PlayCount":5}"""))
+        val item = MediaItemDto(id = "i1", serverId = "srv-emby", sourceType = SourceType.EMBY, title = "Dune")
+        val ud = source.markPlayed(item, played = true)
+        assertThat(ud.isPlayed).isTrue()
+        assertThat(ud.resumePositionTicks).isEqualTo(Ticks.ZERO)
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("POST")
+        assertThat(req.path).isEqualTo("/Users/u1/PlayedItems/i1")
+    }
+
+    @Test fun `unmarkPlayed 走 DELETE 并返回未看状态`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Played":false,"PlaybackPositionTicks":12000000,"IsFavorite":true,"PlayCount":0}"""))
+        val item = MediaItemDto(id = "i1", serverId = "srv-emby", sourceType = SourceType.EMBY, title = "Dune")
+        val ud = source.markPlayed(item, played = false)
+        assertThat(ud.isPlayed).isFalse()
+        assertThat(ud.resumePositionTicks).isEqualTo(Ticks(12_000_000L))
+        assertThat(ud.isFavorite).isTrue()
+        assertThat(server.takeRequest().method).isEqualTo("DELETE")
+    }
+
+    @Test fun `deleteItem 成功返回 true`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+        val item = MediaItemDto(id = "i1", serverId = "srv-emby", sourceType = SourceType.EMBY, title = "Dune")
+        assertThat(source.deleteItem(item)).isTrue()
+        val req = server.takeRequest()
+        assertThat(req.method).isEqualTo("DELETE")
+        assertThat(req.path).isEqualTo("/Items/i1")
+    }
+
+    @Test fun `getPersonWorks 返回该人物的作品`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Items":[{"Id":"m1","Name":"沙丘","RunTimeTicks":9000000000}],"TotalRecordCount":1}"""))
+        val works = source.getPersonWorks("p1")
+        assertThat(works.single().id).isEqualTo("m1")
+        assertThat(works.single().title).isEqualTo("沙丘")
+        assertThat(server.takeRequest().path).contains("PersonIds=p1")
+    }
+
+    @Test fun `personImage 返回带鉴权头的头像 URL`() = runTest {
+        val img = source.personImage("p1", ImageSize.SMALL) as ImageSource.Remote
+        assertThat(img.url).contains("/Items/p1/Images/Primary")
+        assertThat(img.url).doesNotContain("api_key")
+        assertThat(img.headers["X-Emby-Token"]).isEqualTo("T")
+    }
 }

@@ -5,6 +5,7 @@ import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaLibrary
 import app.myplayer.core.model.MediaSource
+import app.myplayer.core.model.UserData
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -41,5 +42,20 @@ class RoomLibraryRepository(private val db: MediaDatabase) : LibraryRepository {
             start += page.items.size
             if (!page.hasMore) break
         }
+    }
+
+    /** 只更新观看状态三字段；条目不在缓存（如详情直查）时静默跳过。 */
+    override suspend fun updateUserData(serverId: String, itemId: String, userData: UserData) {
+        if (db.mediaItemDao().get(serverId, itemId) == null) return
+        db.mediaItemDao().updateUserData(
+            serverId = serverId, itemId = itemId,
+            isPlayed = userData.isPlayed,
+            resumePositionTicks = userData.resumePositionTicks.value,
+            isFavorite = userData.isFavorite,
+        )
+    }
+
+    override suspend fun deleteItem(serverId: String, itemId: String) {
+        db.mediaItemDao().delete(serverId, itemId)
     }
 }

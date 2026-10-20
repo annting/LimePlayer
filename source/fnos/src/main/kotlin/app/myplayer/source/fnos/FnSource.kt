@@ -146,8 +146,11 @@ class FnSource(
                 seasonNumber = o.int("season_number")?.takeIf { it > 0 },
                 episodeNumber = o.int("episode_number")?.takeIf { it > 0 },
                 durationTicks = Ticks((o.int("duration") ?: 0) * TICKS_PER_SECOND),
-                // 飞牛只给分辨率档位（"4k" / "1080p"…），换算成排序用的像素高度
+                // 飞牛只给分辨率档位（"4k" / "1080p"…）：档位字符串直接展示，像素高度换算给排序用
                 height = resolutionHeight(o),
+                resolutionLabel = resolutionLabelOf(o),
+                // vote_average 是字符串（未刮削为 "0"）；≤0 视为无评分
+                communityRating = o.str("vote_average")?.toFloatOrNull()?.takeIf { it > 0f },
                 libraryId = o.str("ancestor_guid"),
                 hasPoster = poster != null,
                 playCount = o.int("watched") ?: 0,
@@ -173,6 +176,8 @@ class FnSource(
             episodeNumber = meta.int("episode_number")?.takeIf { it > 0 },
             durationTicks = Ticks(session.durationSec * TICKS_PER_SECOND),
             height = resolutionHeight(meta),
+            resolutionLabel = resolutionLabelOf(meta),
+            communityRating = meta.str("vote_average")?.toFloatOrNull()?.takeIf { it > 0f },
             libraryId = meta.str("ancestor_guid"),
             hasPoster = posterOf[id] != null,
             userData = UserData(
@@ -266,8 +271,12 @@ class FnSource(
         }
     }
 
+    /** 分辨率档位原串（"480p"/"1080p"/"4k"…），详情页直接展示。 */
+    private fun resolutionLabelOf(o: JsonObject): String? =
+        (o["media_stream"] as? JsonObject)?.arr("resolutions")?.firstString()
+
     private fun resolutionHeight(o: JsonObject): Int? {
-        val res = (o["media_stream"] as? JsonObject)?.arr("resolutions")?.firstString() ?: return null
+        val res = resolutionLabelOf(o) ?: return null
         return when (res.lowercase()) {
             "4k", "2160p" -> 2160
             "1080p", "1080i" -> 1080

@@ -104,8 +104,9 @@ class HttpMediaApi(
         return PagedResult(dto.items, dto.totalRecordCount, startIndex)
     }
 
+    /** 详情查询：`Fields` 显式补 `Overview`（`05` §2.2：真机未下发时的兜底口径）。 */
     suspend fun getItemDetail(itemId: String, userId: String): BaseItemDto =
-        execute(Request.Builder().url(url("/Users/$userId/Items/$itemId", mapOf("Fields" to "MediaSources,UserData,Genres,People"))).applyAuth().build())
+        execute(Request.Builder().url(url("/Users/$userId/Items/$itemId", mapOf("Fields" to "MediaSources,UserData,Genres,People,Overview"))).applyAuth().build())
 
     suspend fun getPlaybackInfo(itemId: String, userId: String, deviceProfileJson: String): PlaybackInfoResponseDto =
         execute(
@@ -114,8 +115,16 @@ class HttpMediaApi(
                 .applyAuth().build()
         )
 
-    /** 某剧集下的全部集（连播取相邻集用）。 */
-    suspend fun getEpisodes(seriesId: String, userId: String): List<BaseItemDto> =
+    /**
+     * 某剧集下的全部集。
+     * - 连播路径（[HttpMediaSource.getAdjacentEpisodes]）只需季号/集号，用默认参数即可（不带图，响应更小）；
+     * - 详情页分季列表需要缩略图与简介，传 [withDetailFields] = true 打开 `EnableImages` 并补 `Overview`。
+     */
+    suspend fun getEpisodes(
+        seriesId: String,
+        userId: String,
+        withDetailFields: Boolean = false,
+    ): List<BaseItemDto> =
         execute<ItemsResponseDto>(
             Request.Builder()
                 .url(
@@ -123,13 +132,68 @@ class HttpMediaApi(
                         "/Shows/$seriesId/Episodes",
                         mapOf(
                             "UserId" to userId,
-                            "Fields" to "MediaSources,UserData,Genres",
-                            "EnableImages" to "false",
+                            "Fields" to if (withDetailFields) "MediaSources,UserData,Genres,Overview"
+                            else "MediaSources,UserData,Genres",
+                            "EnableImages" to withDetailFields.toString(),
                         ),
                     )
                 )
                 .applyAuth().build()
         ).items
+
+    // ---- 详情页写操作与人物页（`05` §2.2，详情页二期）----
+
+    /** 标记已看：返回服务端权威 `UserDataDto` 供本地缓存写回。 */
+    suspend fun markPlayed(itemId: String, userId: String): UserDataDto =
+        execute(
+            Request.Builder()
+                .url(url("/Users/$userId/PlayedItems/$itemId"))
+                .post("{}".toRequestBody("application/json".toMediaType()))
+                .applyAuth().build()
+        )
+
+    /** 取消已看：同路径 DELETE，返回同上。 */
+    suspend fun unmarkPlayed(itemId: String, userId: String): UserDataDto =
+        execute(
+            Request.Builder()
+                .url(url("/Users/$userId/PlayedItems/$itemId"))
+                .delete()
+                .applyAuth().build()
+        )
+
+    /** 删除条目：204 无响应体；无权限账号由服务端返回 401/403。 */
+    suspend fun deleteItem(itemId: String) {
+        withContext(Dispatchers.IO) {
+            client.newCall(
+                Request.Builder().url(url("/Items/$itemId")).delete().applyAuth().build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) throw ApiException.fromStatus(resp.code, resp.body.string())
+            }
+        }
+    }
+
+    /** 人物页作品列表（`PersonIds` 过滤；不含 People 重字段）。 */
+    suspend fun getPersonWorks(personId: String, userId: String, limit: Int = 200): List<BaseItemDto> =
+        execute<ItemsResponseDto>(
+            Request.Builder()
+                .url(
+                    url(
+                        "/Users/$userId/Items",
+                        mapOf(
+                            "Recursive" to "true",
+                            "PersonIds" to personId,
+                            "IncludeItemTypes" to "Movie,Series,Episode,Video",
+                            "Fields" to "MediaSources,UserData,Genres",
+                            "Limit" to limit.toString(),
+                        ),
+                    )
+                )
+                .applyAuth().build()
+        ).items
+
+    /** 人物头像 URL（与条目图片同端点形态；鉴权走请求头）。 */
+    fun personImageUrl(personId: String, maxWidth: Int): String =
+        imageUrl(personId, "Primary", maxWidth)
 
     // ---- trickplay（`05` §6；任务 3-1）----
 

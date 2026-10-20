@@ -68,4 +68,77 @@ class HttpMediaApiTest {
         assertThat(url).contains("maxWidth=400")
         assertThat(url).doesNotContain("api_key")   // 令牌走 headers，不进 URL / Coil 缓存键
     }
+
+    @Test fun `getEpisodes 默认不带图不带简介`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Items":[{"Id":"e1","ParentIndexNumber":1,"IndexNumber":2}],"TotalRecordCount":1}"""))
+        val episodes = api.getEpisodes(seriesId = "s1", userId = "u1")
+        assertThat(episodes.single().parentIndexNumber).isEqualTo(1)
+        val path = server.takeRequest().path!!
+        assertThat(path).startsWith("/Shows/s1/Episodes")
+        assertThat(path).contains("EnableImages=false")
+        assertThat(path).doesNotContain("Overview")
+    }
+
+    @Test fun `getEpisodes 详情页带图并补简介字段`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Items":[{"Id":"e1","Overview":"第一集","ProductionYear":2019}],"TotalRecordCount":1}"""))
+        val episodes = api.getEpisodes(seriesId = "s1", userId = "u1", withDetailFields = true)
+        assertThat(episodes.single().overview).isEqualTo("第一集")
+        val path = server.takeRequest().path!!
+        assertThat(path).contains("EnableImages=true")
+        assertThat(path).contains("Overview")
+    }
+
+    // ---- 详情页写操作与人物页（`05` §2.2，详情页二期）----
+
+    @Test fun `markPlayed 用 POST PlayedItems 并解析权威 UserData`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Played":true,"PlaybackPositionTicks":0,"IsFavorite":false,"PlayCount":3}"""))
+        val dto = api.markPlayed(itemId = "i1", userId = "u1")
+        assertThat(dto.played).isTrue()
+        assertThat(dto.playCount).isEqualTo(3)
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/Users/u1/PlayedItems/i1")
+        assertThat(req.method).isEqualTo("POST")
+    }
+
+    @Test fun `unmarkPlayed 用 DELETE 同路径`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Played":false,"PlayCount":0}"""))
+        val dto = api.unmarkPlayed(itemId = "i1", userId = "u1")
+        assertThat(dto.played).isFalse()
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/Users/u1/PlayedItems/i1")
+        assertThat(req.method).isEqualTo("DELETE")
+    }
+
+    /** 删除条目：204 无响应体也能成功（不走 execute 的 JSON 解析）。 */
+    @Test fun `deleteItem 成功于 204 无响应体`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(204))
+        api.deleteItem("i1")
+        val req = server.takeRequest()
+        assertThat(req.path).isEqualTo("/Items/i1")
+        assertThat(req.method).isEqualTo("DELETE")
+    }
+
+    /** 无权限（403）时上抛 ApiException，由 UI 呈现错误而不是默默成功。 */
+    @Test fun `deleteItem 无权限时抛 ApiException`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403))
+        val error = runCatching { api.deleteItem("i1") }.exceptionOrNull()
+        assertThat(error).isInstanceOf(app.myplayer.core.network.ApiException::class.java)
+    }
+
+    @Test fun `getPersonWorks 按 PersonIds 过滤`() = runTest {
+        server.enqueue(MockResponse().setBody("""{"Items":[{"Id":"m1","Name":"沙丘"}],"TotalRecordCount":1}"""))
+        val works = api.getPersonWorks(personId = "p1", userId = "u1")
+        assertThat(works.single().id).isEqualTo("m1")
+        val path = server.takeRequest().path!!
+        assertThat(path).startsWith("/Users/u1/Items")
+        assertThat(path).contains("PersonIds=p1")
+        assertThat(path).contains("Recursive=true")
+    }
+
+    @Test fun `personImageUrl 与条目图片同端点且不带令牌`() {
+        val url = api.personImageUrl(personId = "p1", maxWidth = 200)
+        assertThat(url).contains("/Items/p1/Images/Primary")
+        assertThat(url).contains("maxWidth=200")
+        assertThat(url).doesNotContain("api_key")
+    }
 }

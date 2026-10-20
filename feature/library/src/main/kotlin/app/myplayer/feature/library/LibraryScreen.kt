@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.network.NetworkHeaders
@@ -35,9 +37,12 @@ import app.myplayer.core.designsystem.MonoLabelStyle
 import app.myplayer.core.designsystem.components.AppChip
 import app.myplayer.core.designsystem.components.EmptyState
 import app.myplayer.core.designsystem.components.PageHeader
+import app.myplayer.core.designsystem.components.PlayIcon
 import app.myplayer.core.designsystem.components.ShimmerBox
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
+import app.myplayer.core.model.formatDuration
+import app.myplayer.core.model.formatFileSize
 
 /**
  * 库浏览页（`docs/03` §6.1 / 设计板 ① 的视觉基线）：
@@ -49,6 +54,7 @@ fun LibraryScreen(
     loadImage: suspend (MediaItemDto) -> ImageSource,
     onSelectLibrary: (String) -> Unit,
     onPlay: (MediaItemDto) -> Unit,
+    onOpenDetail: (MediaItemDto) -> Unit,
     onSort: (SortSpec) -> Unit = {},
     onFilter: (FilterSpec) -> Unit = {},
     onResetFilter: () -> Unit = {},
@@ -124,7 +130,7 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 items(state.items, key = { it.id }) { item ->
-                    PosterCard(item = item, loadImage = loadImage, onPlay = onPlay)
+                    PosterCard(item = item, loadImage = loadImage, onPlay = onPlay, onOpenDetail = onOpenDetail)
                 }
             }
         }
@@ -143,12 +149,18 @@ private fun rememberImageSource(itemId: String, load: suspend () -> ImageSource)
     return source
 }
 
-/** 海报卡（设计板 `.poster`）：2:3 圆角、底部 scrim、评分角标、标题 + 单行元信息；按压缩放 0.96。 */
+/**
+ * 海报卡（设计板 `.poster`）：2:3 圆角、底部 scrim、评分角标、标题 + 单行元信息；按压缩放 0.96。
+ *
+ * **两级入口**（`03` §6.1）：中央播放按钮 → [onPlay]（直接播放）；卡片其余区域 → [onOpenDetail]。
+ * 内层按钮的 `clickable` 会消费点击，不会冒泡到外层卡片的进详情回调。
+ */
 @Composable
 internal fun PosterCard(
     item: MediaItemDto,
     loadImage: suspend (MediaItemDto) -> ImageSource,
     onPlay: (MediaItemDto) -> Unit,
+    onOpenDetail: (MediaItemDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val image = rememberImageSource(item.id) { loadImage(item) }
@@ -178,7 +190,7 @@ internal fun PosterCard(
     Column(
         modifier = modifier
             .scale(scale)
-            .clickable(interactionSource = interaction, indication = null, onClick = { onPlay(item) }),
+            .clickable(interactionSource = interaction, indication = null, onClick = { onOpenDetail(item) }),
     ) {
         Box(
             modifier = Modifier
@@ -216,6 +228,20 @@ internal fun PosterCard(
                         )
                     )
             )
+            // 中央播放按钮（`03` §6.1 两级入口）：点它直接播放；热区 48dp。
+            // 叠在 scrim 之上、独立 clickable —— 内层消费点击，不冒泡到卡片的「进详情」。
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color(0x8C000000))
+                    .clickable(onClick = { onPlay(item) })
+                    .semantics { contentDescription = "播放 ${item.title}" },
+                contentAlignment = Alignment.Center,
+            ) {
+                PlayIcon(tint = Color.White)
+            }
             item.communityRating?.takeIf { it > 0f }?.let { rating ->
                 Text(
                     String.format(java.util.Locale.US, "%.1f", rating),
@@ -240,14 +266,12 @@ internal fun PosterCard(
     }
 }
 
-/** 卡片第二行元信息：时长 · 体积（有则拼）。 */
+/** 卡片第二行元信息：时长 · 体积（有则拼；格式见 `03` §6.5，与详情页共用 `:core:model` 实现）。 */
 private fun MediaItemDto.metaLine(): String? {
-    val parts = mutableListOf<String>()
-    val minutes = durationTicks.seconds / 60
-    if (minutes > 0) parts += "$minutes 分钟"
-    sizeBytes?.takeIf { it > 0 }?.let {
-        parts += String.format(java.util.Locale.US, "%.1f GB", it / 1024.0 / 1024.0 / 1024.0)
-    }
+    val parts = listOfNotNull(
+        formatDuration(durationTicks),
+        sizeBytes?.let(::formatFileSize),
+    )
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
 
