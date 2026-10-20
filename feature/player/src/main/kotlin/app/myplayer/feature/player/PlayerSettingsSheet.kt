@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -15,14 +16,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.components.AppChip
@@ -38,11 +43,42 @@ import app.myplayer.core.playback.TrackKind
 @Composable
 fun PlayerSettingsSheet(
     state: PlayerUiState,
+    /** 播放器是否处于「窗口内旋转」的横屏版式；此时不能用 ModalBottomSheet（独立窗口不跟着转）。 */
+    rotated: Boolean,
     onDismiss: () -> Unit,
     onScaleMode: (ScaleMode) -> Unit,
     onSpeed: (Float) -> Unit,
     onTrack: (TrackKind, String?) -> Unit,
 ) {
+    if (rotated) {
+        // 旋转态：同一坐标系里的浮层，跟着播放器一起转
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onDismiss() }
+            )
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .heightIn(max = 300.dp)
+                    .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp, bottom = 16.dp),
+            ) {
+                SheetContent(state, onScaleMode, onSpeed, onTrack)
+            }
+        }
+        return
+    }
+
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scheme = MaterialTheme.colorScheme
     val app = LocalAppColors.current
@@ -72,63 +108,74 @@ fun PlayerSettingsSheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
         ) {
-            SectionTitle("画面比例")
-            Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                ScaleMode.entries.forEachIndexed { i, mode ->
-                    if (i > 0) Spacer(Modifier.width(8.dp))
-                    AppChip(
-                        text = mode.label,
-                        selected = state.scaleMode == mode,
-                        onClick = { onScaleMode(mode) },
-                    )
-                }
-            }
-
-            SectionTitle("播放速度")
-            Speeds.chunked(4).forEachIndexed { rowIndex, row ->
-                if (rowIndex > 0) Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth()) {
-                    row.forEachIndexed { i, (speed, label) ->
-                        if (i > 0) Spacer(Modifier.width(8.dp))
-                        AppChip(
-                            text = label,
-                            selected = state.speed == speed,
-                            onClick = { onSpeed(speed) },
-                        )
-                    }
-                }
-            }
-
-            SectionTitle("音轨")
-            TrackSection(
-                tracks = state.tracks.filter { it.kind == TrackKind.AUDIO },
-                emptyText = "该视频只有一条音频（或暂未解析出轨道）",
-                onSelect = { onTrack(TrackKind.AUDIO, it) },
-                allowOff = false,
-            )
-
-            SectionTitle("字幕")
-            TrackSection(
-                tracks = state.tracks.filter { it.kind == TrackKind.SUBTITLE },
-                emptyText = "该视频没有内嵌字幕",
-                onSelect = { onTrack(TrackKind.SUBTITLE, it) },
-                allowOff = true,
-            )
+            SheetContent(state, onScaleMode, onSpeed, onTrack)
         }
     }
 }
 
-/** 倍速档位（`03` §5.6：0.5×–3.0×，步进 0.25× 的子集，避免抽屉过长）。 */
-private val Speeds: List<Pair<Float, String>> = listOf(
-    0.5f to "0.5×",
-    0.75f to "0.75×",
-    1f to "1.0×",
-    1.25f to "1.25×",
-    1.5f to "1.5×",
-    1.75f to "1.75×",
-    2f to "2.0×",
-    2.5f to "2.5×",
-    3f to "3.0×",
+/** 设置面板的内容（ModalBottomSheet 与旋转态浮层共用）。 */
+@Composable
+private fun SheetContent(
+    state: PlayerUiState,
+    onScaleMode: (ScaleMode) -> Unit,
+    onSpeed: (Float) -> Unit,
+    onTrack: (TrackKind, String?) -> Unit,
+) {
+    SectionTitle("画面比例")
+    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+        ScaleMode.entries.forEachIndexed { i, mode ->
+            if (i > 0) Spacer(Modifier.width(8.dp))
+            AppChip(
+        text = mode.label,
+        selected = state.scaleMode == mode,
+        onClick = { onScaleMode(mode) },
+            )
+        }
+    }
+
+    SectionTitle("播放速度")
+    Speeds.chunked(4).forEachIndexed { rowIndex, row ->
+        if (rowIndex > 0) Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth()) {
+            row.forEachIndexed { i, (speed, label) ->
+        if (i > 0) Spacer(Modifier.width(8.dp))
+        AppChip(
+            text = label,
+            selected = state.speed == speed,
+            onClick = { onSpeed(speed) },
+        )
+            }
+        }
+    }
+
+    SectionTitle("音轨")
+    TrackSection(
+        tracks = state.tracks.filter { it.kind == TrackKind.AUDIO },
+        emptyText = "该视频只有一条音频（或暂未解析出轨道）",
+        onSelect = { onTrack(TrackKind.AUDIO, it) },
+        allowOff = false,
+    )
+
+    SectionTitle("字幕")
+    TrackSection(
+        tracks = state.tracks.filter { it.kind == TrackKind.SUBTITLE },
+        emptyText = "该视频没有内嵌字幕",
+        onSelect = { onTrack(TrackKind.SUBTITLE, it) },
+        allowOff = true,
+    )
+}
+
+/** 倍速档位（`03` §5.6：0.5X–3.0X，步进 0.25× 的子集，避免抽屉过长）。底部快捷浮层共用同一份。 */
+internal val Speeds: List<Pair<Float, String>> = listOf(
+    0.5f to "0.5x",
+    0.75f to "0.75x",
+    1f to "1.0x",
+    1.25f to "1.25x",
+    1.5f to "1.5x",
+    1.75f to "1.75x",
+    2f to "2.0x",
+    2.5f to "2.5x",
+    3f to "3.0x",
 )
 
 @Composable

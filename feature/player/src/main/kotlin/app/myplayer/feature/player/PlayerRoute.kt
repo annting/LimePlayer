@@ -41,9 +41,11 @@ fun PlayerRoute(
     // 播完且无下一集 → 回列表（`03` §5.7）
     val ui by vm.ui.collectAsStateWithLifecycle()
 
-    // 退出统一入口：**先解绑视频面再退**。SurfaceView 是独立窗口图层，
-    // Compose 的转场动画管不到它 —— 直接 pop 会看到视频残留在列表页上方，
-    // 且这一帧还要等 ExoPlayer 收尾才刷新（2026-10-19 真机 bug：卡一下 + 重叠）。
+    // 退出统一入口：**先解绑视频面再退**。2026-10-20 起视频面是 TextureView（画在窗口里），
+    // 但退出前解绑仍然保留：这一帧不该再等 ExoPlayer 收尾，否则会「卡一下」。
+    //
+    // 注意：横竖屏切换只旋转播放器内容，**系统方向从头到尾没变**，
+    // 所以退出时没有任何方向还原动作 —— 不需要黑幕、也没有旋转动画。
     var leaving by remember { mutableStateOf(false) }
     val leave: () -> Unit = {
         if (!leaving) {
@@ -55,8 +57,8 @@ fun PlayerRoute(
     LaunchedEffect(ui.finished) {
         if (ui.finished) leave()
     }
-    // 系统返回键也走同一条退出路径（先解绑 SurfaceView 再 pop）。
-    // 弹层打开时让位给 ModalBottomSheet 自己的返回处理（关弹层而非退页）。
+    // 系统返回键也走同一条退出路径。
+    // 弹层打开时让位给弹层自己的返回处理（关弹层而非退页）。
     androidx.activity.compose.BackHandler(enabled = !ui.sheetVisible) { leave() }
     PlayerScreen(
         vm = vm,

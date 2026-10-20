@@ -29,6 +29,8 @@ class EmbyMapper(private val serverId: String) {
             audioCodecs = listOfNotNull(src?.audioCodec).ifEmpty { audio.mapNotNull { it.codec }.distinct() },
             container = src?.container,
             path = src?.path,
+            // 入库时间（Emby 给 ISO-8601 字符串）：详情页「添加日期」用
+            dateCreated = parseEmbyDate(dto.dateCreated),
             communityRating = dto.communityRating, officialRating = dto.officialRating,
             productionYear = dto.productionYear, overview = dto.overview,
             playCount = dto.userData?.playCount ?: 0,
@@ -74,4 +76,21 @@ private fun MediaStreamDto.toStreamInfo(): MediaStreamInfo? {
         isExternal = isExternal,
         isDefault = isDefault,
     )
+}
+
+/**
+ * Emby / Jellyfin 的 `DateCreated` 是 ISO-8601（如 `2021-07-31T05:00:00.0000000Z`）。
+ * 解析为 epoch 毫秒供 UI 格式化；格式不认识时返回 null（详情页就不显示这一行）。
+ */
+internal fun parseEmbyDate(raw: String?): Long? {
+    if (raw.isNullOrBlank()) return null
+    return runCatching { java.time.Instant.parse(raw).toEpochMilli() }
+        .recoverCatching {
+            // 少数服务端给的是本地时间（无时区后缀）：截到秒再按系统时区解释
+            java.time.LocalDateTime.parse(raw.take(19))
+                .atZone(java.time.ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        }
+        .getOrNull()
 }

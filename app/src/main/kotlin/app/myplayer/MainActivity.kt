@@ -80,8 +80,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                        AppContent()
+                    // 播放页需要**真正的全屏**（横屏版式靠整体旋转实现，舞台得拿满窗口尺寸），
+                    // 其余页面统一避让状态栏/导航条。
+                    val fullscreenPlayer = remember { mutableStateOf(false) }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (fullscreenPlayer.value) Modifier
+                                else Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+                            )
+                    ) {
+                        AppContent(onFullscreenChange = { fullscreenPlayer.value = it })
                     }
                 }
             }
@@ -89,7 +99,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun AppContent() {
+    private fun AppContent(onFullscreenChange: (Boolean) -> Unit = {}) {
         val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = null)
         val servers by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
         val lockVm = remember { LockViewModel(credentials) }
@@ -174,6 +184,7 @@ class MainActivity : ComponentActivity() {
                 localThumbnails = settings?.localThumbnails ?: true,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
+                onFullscreenChange = onFullscreenChange,
             )
             if (needsLock) {
                 PatternLockScreen(lockState, lockVm::onPointTouched, lockVm::onDrawEnd)

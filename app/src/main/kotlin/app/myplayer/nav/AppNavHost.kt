@@ -12,6 +12,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
@@ -78,10 +79,21 @@ fun AppNavHost(
     localThumbnails: Boolean,
     serverId: String?,
     source: MediaSource?,
+    /** 播放页要占满整个窗口（不避让系统栏），由 MainActivity 按此状态去掉根部的 insets 内边距。 */
+    onFullscreenChange: (Boolean) -> Unit = {},
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<PendingServer?>(null) }
+
+    // 播放页是唯一需要「贴满窗口」的页面：横竖屏切换靠整体旋转播放器内容实现，
+    // 舞台必须能拿到完整窗口尺寸，否则会被 safeDrawing 的内边距挤成小方块（2026-10-20 真机反馈）。
+    val backStackEntry by nav.currentBackStackEntryAsState()
+    val fullscreen = backStackEntry?.destination?.route?.startsWith(Routes.PLAYER) == true
+    LaunchedEffect(fullscreen) { onFullscreenChange(fullscreen) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { onFullscreenChange(false) }
+    }
 
     NavHost(nav, startDestination = if (serverId == null) Routes.WELCOME else Routes.MAIN) {
 

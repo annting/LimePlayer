@@ -9,7 +9,7 @@ import app.myplayer.core.model.UserData
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
-/** 主按钮文案三态（`03` §6.3）：未看「播放」/ 在看「继续播放 · 剩 N 分」/ 已看「再次播放」。 */
+/** 主按钮文案（`03` §6.3）：未看过 / 已看完「播放」；看了一半「继续播放」+ 续播行。 */
 class DetailUiStateTest {
 
     private fun item(
@@ -22,23 +22,46 @@ class DetailUiStateTest {
         userData = UserData(isPlayed = played, resumePositionTicks = Ticks.ofSeconds(resumeSeconds)),
     )
 
-    @Test fun `未观看时显示播放`() {
-        assertThat(primaryActionLabel(item(durationSeconds = 7200))).isEqualTo("播放")
+    @Test fun `未观看时显示播放且无续播行`() {
+        val it = item(durationSeconds = 7200)
+        assertThat(primaryActionLabel(it)).isEqualTo("播放")
+        assertThat(it.resumeState()).isNull()
     }
 
-    @Test fun `看到一半显示继续播放与剩余分钟`() {
-        // 2 小时片长、已看 30 分钟 → 剩 90 分
-        assertThat(primaryActionLabel(item(durationSeconds = 7200, resumeSeconds = 1800)))
-            .isEqualTo("继续播放 · 剩 90 分")
+    @Test fun `已看完且服务端清空位置时显示播放`() {
+        // Emby 判定看完会把 PlaybackPositionTicks 清零（真机实测：FigureRobics (1)）
+        val it = item(durationSeconds = 7200, resumeSeconds = 0, played = true)
+        assertThat(primaryActionLabel(it)).isEqualTo("播放")
+        assertThat(it.resumeState()).isNull()
     }
 
-    @Test fun `时长缺失时只显示继续播放`() {
-        assertThat(primaryActionLabel(item(resumeSeconds = 600))).isEqualTo("继续播放")
+    @Test fun `已标记已看但服务端仍有位置时按位置显示继续播放`() {
+        // 只看服务端位置、不看 isPlayed（2026-10-19 用户确认）：看完后重看留下一段进度也要显示
+        val it = item(durationSeconds = 7200, resumeSeconds = 1800, played = true)
+        assertThat(primaryActionLabel(it)).isEqualTo("继续播放")
+        assertThat(it.resumeState()?.remaining).isEqualTo("1小时30分")
     }
 
-    @Test fun `已看显示再次播放`() {
-        assertThat(primaryActionLabel(item(durationSeconds = 7200, resumeSeconds = 7100, played = true)))
-            .isEqualTo("再次播放")
+    @Test fun `看到一半显示继续播放并给出进度与剩余`() {
+        // 2 小时片长、已看 30 分钟 → 进度 25%、剩余 1小时30分
+        val it = item(durationSeconds = 7200, resumeSeconds = 1800)
+        assertThat(primaryActionLabel(it)).isEqualTo("继续播放")
+        val resume = it.resumeState()
+        assertThat(resume).isNotNull()
+        assertThat(resume!!.fraction).isWithin(0.001f).of(0.25f)
+        assertThat(resume.remaining).isEqualTo("1小时30分")
+    }
+
+    @Test fun `时长缺失时只显示继续播放不画进度条`() {
+        // 飞牛等源可能不给时长：算不出占比与剩余，只保留文案
+        val it = item(resumeSeconds = 600)
+        assertThat(primaryActionLabel(it)).isEqualTo("继续播放")
+        assertThat(it.resumeState()).isNull()
+    }
+
+    @Test fun `剩余不足一分钟也按秒显示`() {
+        val it = item(durationSeconds = 7200, resumeSeconds = 7190)
+        assertThat(it.resumeState()?.remaining).isEqualTo("10秒")
     }
 
     // ---- 次级按钮文案（`03` §6.3 标记已播放）----
@@ -53,19 +76,30 @@ class DetailUiStateTest {
 
     // ---- 信息分区（`03` §6.3；取代旧「技术信息」折叠区）----
 
-    @Test fun `文件信息含完整路径且只含有值的行`() {
-        val rows = item().copy(
+    @Test fun `文件信息含时长添加日期与完整路径且只含有值的行`() {
+        val rows = item(durationSeconds = 1890).copy(
             container = "mkv", bitrate = 20_000_000, sizeBytes = 39_219_535L,
             path = "/volume3/video/Test3/FigureRobics (2).avi",
+            // UTC 正午：任何时区都落在同一天，断言不受运行机器时区影响
+            dateCreated = java.time.Instant.parse("2021-07-31T12:00:00Z").toEpochMilli(),
         ).fileInfoRows()
         assertThat(rows.map { it.first })
-            .containsExactly("容器", "文件大小", "总码率", "路径").inOrder()
+            .containsExactly("容器", "文件大小", "时长", "总码率", "添加日期", "路径").inOrder()
         assertThat(rows).containsAtLeast(
             "容器" to "MKV",
-            "文件大小" to "37 MB",
+            "文件大小" to "37MB",
+            "时长" to "31分30秒",
             "总码率" to "20.0 Mbps",
+            "添加日期" to "2021-07-31",
             "路径" to "/volume3/video/Test3/FigureRobics (2).avi",
         )
+    }
+
+    @Test fun `时长格式按时长量级切换`() {
+        // 45 秒 / 12 分 5 秒 / 1 小时 23 分：全程带秒，整分省掉尾部「0秒」
+        assertThat(item(durationSeconds = 45).fileInfoRows().toMap()["时长"]).isEqualTo("45秒")
+        assertThat(item(durationSeconds = 725).fileInfoRows().toMap()["时长"]).isEqualTo("12分5秒")
+        assertThat(item(durationSeconds = 4980).fileInfoRows().toMap()["时长"]).isEqualTo("1小时23分")
     }
 
     @Test fun `文件信息全空时不渲染`() {

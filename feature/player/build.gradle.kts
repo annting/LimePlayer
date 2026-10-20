@@ -38,6 +38,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     // 系统返回键接管（退出前先解绑 SurfaceView）
     implementation(libs.androidx.activity.compose)
+    // WindowInsetsController（旋转态隐藏系统栏）
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.media3.ui)
     implementation(libs.kotlinx.coroutines.core)
     // trickplay 预览分片图（任务 3-2）
