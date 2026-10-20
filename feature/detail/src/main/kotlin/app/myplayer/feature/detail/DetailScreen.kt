@@ -34,6 +34,7 @@ import app.myplayer.core.designsystem.components.AppButtonStyle
 import app.myplayer.core.designsystem.components.AppChip
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.EmptyState
+import app.myplayer.core.designsystem.components.PlayIcon
 import app.myplayer.core.model.CastMember
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSize
@@ -129,11 +130,15 @@ private fun DetailContent(
         )
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(16.dp))
+            val resume = item.resumeState()
             AppButton(
                 text = primaryActionLabel(item),
                 onClick = { onPlay(item) },
+                leadingIcon = { PlayIcon(tint = MaterialTheme.colorScheme.onPrimary) },
                 modifier = Modifier.fillMaxWidth(),
             )
+            // 续播行（`03` §6.3）：看了一半才有 —— 按钮下方进度条 + 剩余时长
+            resume?.let { ResumeRow(fraction = it.fraction, remaining = it.remaining) }
             if (canMarkPlayed) {
                 Spacer(Modifier.height(8.dp))
                 AppButton(
@@ -196,6 +201,37 @@ private fun DetailContent(
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
             },
+        )
+    }
+}
+
+/**
+ * 续播行（`03` §6.3）：全宽进度条 + 「剩余 1小时25分钟」。
+ * 颜色沿用播放页进度条的主色，轨道用弱化色，避免在详情页里过于抢眼。
+ */
+@Composable
+private fun ResumeRow(fraction: Float, remaining: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(10.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                    .background(MaterialTheme.colorScheme.primary)
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "剩余 $remaining",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
