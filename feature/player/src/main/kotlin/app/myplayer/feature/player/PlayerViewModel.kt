@@ -54,6 +54,8 @@ data class PlayerUiState(
     val nextUpCountdown: Int = 0,
     /** 顶部降级提示（直放失败切换转码时短暂显示）。 */
     val fallbackNotice: String? = null,
+    /** 双击快进 / 快退的居中提示（「+10 秒」/「-10 秒」，1s 后自动消失，`03` §5.5）。 */
+    val seekHint: String? = null,
     /** 播完且没有下一集：路由据此回列表。 */
     val finished: Boolean = false,
     /** 连播浮层里要显示的下一集（null = 没有下一集）。 */
@@ -116,6 +118,7 @@ class PlayerViewModel(
     /** 直放已降级过一次转码（避免错误风暴里反复重试）。 */
     private var transcodeRetried = false
     private var nextUpJob: Job? = null
+    private var seekHintJob: Job? = null
     private var autoPlayNextEnabled = true
 
     init {
@@ -250,12 +253,31 @@ class PlayerViewModel(
         notifyInteraction()
     }
 
-    /** 双击快进 / 快退（相对当前进度；`03` §5.5 默认 ±10s）。 */
-    fun seekBy(deltaMs: Long) {
+    /**
+     * 快退 / 快进（相对当前进度；`03` §5.5 默认 ±10s）。控制层按钮用这个 —— 按钮本身可见，
+     * 不需要居中提示。
+     */
+    fun seekBy(deltaMs: Long) = seek(deltaMs, withHint = false)
+
+    /**
+     * 双击快进 / 快退（`03` §5.5）：与 [seekBy] 同一 seek 语义，另在屏幕正中闪现 1s 的
+     * 「+10 秒 / -10 秒」提示 —— 双击多半处在无控制层的沉浸态，不给反馈用户不知道跳了多远。
+     */
+    fun seekByWithHint(deltaMs: Long) = seek(deltaMs, withHint = true)
+
+    private fun seek(deltaMs: Long, withHint: Boolean) {
         if (_ui.value.locked) return
         val d = _ui.value.durationMs
         val raw = _ui.value.positionMs + deltaMs
         engine.seekTo(if (d > 0L) raw.coerceIn(0L, d) else raw.coerceAtLeast(0L))
+        if (withHint) {
+            _ui.update { it.copy(seekHint = seekHintText(deltaMs)) }
+            seekHintJob?.cancel()
+            seekHintJob = viewModelScope.launch {
+                delay(SEEK_HINT_DURATION_MS)
+                _ui.update { it.copy(seekHint = null) }
+            }
+        }
         notifyInteraction()
     }
 
@@ -473,6 +495,8 @@ class PlayerViewModel(
 
     private companion object {
         const val CONTROLS_AUTO_HIDE_MS = 3_000L
+        /** 双击 seek 提示的显示时长（`03` §5.5：1s）。 */
+        const val SEEK_HINT_DURATION_MS = 1_000L
         /** 连播浮层出现阈值（`03` §5.7：播至 90%）。 */
         const val NEXT_UP_THRESHOLD_PERCENT = 90
         const val NEXT_UP_COUNTDOWN_SECONDS = 10

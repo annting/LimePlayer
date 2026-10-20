@@ -23,3 +23,9 @@ internal fun verticalDragValue(startValue: Float, deltaY: Float, viewHeightPx: I
 
 /** 双击 seek 的增量（`03` §5.5 默认 10s；设置项「5 / 10 / 30」在 P5 接入）。 */
 internal const val DOUBLE_TAP_SEEK_MS = 10_000L
+
+/** 双击 seek 提示文案（`03` §5.5）：快进「+10 秒」、快退「-10 秒」。 */
+internal fun seekHintText(deltaMs: Long): String {
+    val seconds = deltaMs / 1_000L
+    return if (seconds >= 0L) "+$seconds 秒" else "$seconds 秒"
+}

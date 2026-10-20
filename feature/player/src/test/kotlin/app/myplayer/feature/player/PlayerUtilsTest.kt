@@ -41,4 +41,11 @@ class PlayerUtilsTest {
     fun `高度为 0 时保持起点值`() {
         assertThat(verticalDragValue(0.42f, deltaY = -100f, viewHeightPx = 0)).isEqualTo(0.42f)
     }
+
+    @Test
+    fun `双击 seek 提示文案`() {
+        assertThat(seekHintText(10_000)).isEqualTo("+10 秒")
+        assertThat(seekHintText(-10_000)).isEqualTo("-10 秒")
+        assertThat(seekHintText(30_000)).isEqualTo("+30 秒")
+    }
 }

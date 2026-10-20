@@ -225,6 +225,54 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `双击 seek 闪现提示并在 1 秒后消失`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true, positionMs = 30_000, durationMs = 7_200_000))
+        runCurrent()
+
+        vm.seekByWithHint(10_000)
+        assertThat(engine.seeks).containsExactly(40_000L)
+        assertThat(vm.ui.value.seekHint).isEqualTo("+10 秒")
+
+        advanceTimeBy(999)
+        runCurrent()
+        assertThat(vm.ui.value.seekHint).isNotNull()   // 未满 1s 仍在显示
+
+        advanceTimeBy(2)
+        runCurrent()
+        assertThat(vm.ui.value.seekHint).isNull()
+    }
+
+    @Test
+    fun `双击快退提示为负值`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, positionMs = 30_000, durationMs = 7_200_000))
+        runCurrent()
+
+        vm.seekByWithHint(-10_000)
+
+        assertThat(vm.ui.value.seekHint).isEqualTo("-10 秒")
+    }
+
+    @Test
+    fun `控制层快进按钮不弹提示`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, positionMs = 30_000, durationMs = 7_200_000))
+        runCurrent()
+
+        vm.seekBy(10_000)   // 控制层按钮走的路径
+
+        assertThat(engine.seeks).containsExactly(40_000L)
+        assertThat(vm.ui.value.seekHint).isNull()
+    }
+
+    @Test
     fun `拖动期间不 seek，松手只提交一次`() = runTest(testDispatcher) {
         val engine = FakeEngine()
         val vm = vm(engine, FakeSource(item(), plan))
@@ -279,7 +327,9 @@ class PlayerViewModelTest {
         assertThat(vm.ui.value.controlsVisible).isFalse()   // 锁定态屏蔽
 
         vm.seekBy(10_000)
+        vm.seekByWithHint(10_000)
         assertThat(engine.seeks).isEmpty()
+        assertThat(vm.ui.value.seekHint).isNull()   // 锁定态连提示也不弹
     }
 
     @Test
