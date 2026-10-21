@@ -93,6 +93,9 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var released = false
 
+    /** 是否已释放（持有者据此重建引擎，避免「已释放的引擎不能再 prepare」）。 */
+    val isReleased: Boolean get() = released
+
     /** 位置轮询（主线程，250ms）。 */
     private val ticker = object : Runnable {
         override fun run() {
