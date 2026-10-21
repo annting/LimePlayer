@@ -80,18 +80,11 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    // 播放页需要**真正的全屏**（横屏版式靠整体旋转实现，舞台得拿满窗口尺寸），
-                    // 其余页面统一避让状态栏/导航条。
-                    val fullscreenPlayer = remember { mutableStateOf(false) }
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .then(
-                                if (fullscreenPlayer.value) Modifier
-                                else Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
-                            )
-                    ) {
-                        AppContent(onFullscreenChange = { fullscreenPlayer.value = it })
+                    // 所有页面统一避让状态栏 / 导航条。
+                    // 播放页要的是「满窗口」——它自己在 PlayerRoute 里用布局修饰符跳出这层内边距，
+                    // 不走全局开关（全局开关会在切页时引起整棵树重排，画面会跳一下）。
+                    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                        AppContent()
                     }
                 }
             }
@@ -99,7 +92,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun AppContent(onFullscreenChange: (Boolean) -> Unit = {}) {
+    private fun AppContent() {
         val settings by settingsStore.settings.collectAsStateWithLifecycle(initialValue = null)
         val servers by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
         val lockVm = remember { LockViewModel(credentials) }
@@ -184,7 +177,6 @@ class MainActivity : ComponentActivity() {
                 localThumbnails = settings?.localThumbnails ?: true,
                 serverId = if (showWelcome) null else activeConfig.id,
                 source = source,
-                onFullscreenChange = onFullscreenChange,
             )
             if (needsLock) {
                 PatternLockScreen(lockState, lockVm::onPointTouched, lockVm::onDrawEnd)

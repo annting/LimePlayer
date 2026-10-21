@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.composable
@@ -79,23 +80,26 @@ fun AppNavHost(
     localThumbnails: Boolean,
     serverId: String?,
     source: MediaSource?,
-    /** 播放页要占满整个窗口（不避让系统栏），由 MainActivity 按此状态去掉根部的 insets 内边距。 */
-    onFullscreenChange: (Boolean) -> Unit = {},
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<PendingServer?>(null) }
 
-    // 播放页是唯一需要「贴满窗口」的页面：横竖屏切换靠整体旋转播放器内容实现，
-    // 舞台必须能拿到完整窗口尺寸，否则会被 safeDrawing 的内边距挤成小方块（2026-10-20 真机反馈）。
-    val backStackEntry by nav.currentBackStackEntryAsState()
-    val fullscreen = backStackEntry?.destination?.route?.startsWith(Routes.PLAYER) == true
-    LaunchedEffect(fullscreen) { onFullscreenChange(fullscreen) }
-    androidx.compose.runtime.DisposableEffect(Unit) {
-        onDispose { onFullscreenChange(false) }
-    }
 
-    NavHost(nav, startDestination = if (serverId == null) Routes.WELCOME else Routes.MAIN) {
+    // 页面转场：Navigation-Compose 的默认值是 **700ms** 淡入淡出 —— 返回时要等最长的那个
+    // 转场跑完才销毁播放页，画面就会定格 700ms（2026-10-20 实测 pop 后 731ms 才 dispose）。
+    // 这里统一改成 220ms 的交叉淡化：够快，又能让「列表页在播放页淡出期间完成组合」，
+    // 不会出现中间那段全黑空档。
+    NavHost(
+        nav,
+        startDestination = if (serverId == null) Routes.WELCOME else Routes.MAIN,
+        enterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(TRANSITION_MS)) },
+        exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(TRANSITION_MS)) },
+        // 返回：目标页**立刻出现**（不淡化）。播放页退场是「滑走」，目标页必须已经在下面
+        // 铺好，否则滑动过程中会露出窗口背景 → 视觉上是一次黑闪（2026-10-20 用户反馈）。
+        popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+        popExitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(TRANSITION_MS)) },
+    ) {
 
         composable(Routes.WELCOME) {
             NoServerScreen(onAddServer = { nav.navigate(Routes.ADD_SERVER) })
@@ -296,13 +300,26 @@ fun AppNavHost(
         composable(
             route = "${Routes.PLAYER}/{itemId}",
             arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
-            // 播放页进出**不做淡入淡出**：视频面是 SurfaceView（独立窗口图层），
-            // 不参与 Compose 的 alpha 转场 —— 淡出期间画面仍不透明地盖在列表上方，
-            // 看起来就是「视频与列表重叠」（2026-10-19 真机 bug）。瞬时切换最干净。
+            // 进入播放页：瞬时（播放页本身是黑底满屏，不需要渐变）
             enterTransition = { androidx.compose.animation.EnterTransition.None },
             exitTransition = { androidx.compose.animation.ExitTransition.None },
             popEnterTransition = { androidx.compose.animation.EnterTransition.None },
-            popExitTransition = { androidx.compose.animation.ExitTransition.None },
+            // 退出播放页：**向下滑出**（对齐 VidHub 的「移出滑动」，2026-10-20 用户要求）。
+            // 淡出的问题是屏幕先整体变暗、再出现列表，看起来像一次黑闪；
+            // 滑动时画面始终不透明，列表在下方逐步露出来，不会变暗。
+            //
+            // delayMillis：先保持一帧多一点再滑，给目标页留出首帧组合时间
+            // （详情页重新组合约 100~150ms，太早开始滑会先露出窗口背景）。
+            popExitTransition = {
+                slideOutOfContainer(
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = SLIDE_MS,
+                        delayMillis = SLIDE_DELAY_MS,
+                        easing = androidx.compose.animation.core.FastOutSlowInEasing,
+                    ),
+                    towards = AnimatedContentTransitionScope.SlideDirection.Down,
+                )
+            },
         ) { entry ->
             val itemId = entry.arguments?.getString("itemId").orEmpty()
             val src = source
@@ -495,3 +512,16 @@ internal fun LibraryDestination(
         serverLabel = serverLabel,
     )
 }
+
+/** 页面转场时长（毫秒）：默认 700ms 太拖，300ms 的淡化够快也够柔和。 */
+private const val TRANSITION_MS = 300
+
+/**
+ * 播放页向下滑出的时长与起滑延迟（毫秒）。
+ *
+ * 320ms 与主流播放器（VidHub / YouTube）的退场节奏接近；
+ * 80ms 延迟是为了让目标页先把首帧画出来（返回详情页要重新加载海报，约 60ms），
+ * 否则滑动一开始露出的是一片还没画内容的深色区域。
+ */
+private const val SLIDE_MS = 320
+private const val SLIDE_DELAY_MS = 80

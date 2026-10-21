@@ -39,7 +39,11 @@ class DetailViewModel(
 
     /** 首次进入与失败重试共用；重复调用以最后一次为准。 */
     fun load() = viewModelScope.launch {
-        _state.value = DetailUiState.Loading
+        // 已经有内容时**不清屏**（stale-while-revalidate）。
+        // 从播放页返回时详情页会重新进入组合并再次调用 load()，若无脑重置成 Loading，
+        // 页面会先闪一页转圈 —— 播放页滑出退场时露出的那片深色就是这个（2026-10-20 真机）。
+        val hadContent = _state.value is DetailUiState.Content
+        if (!hadContent) _state.value = DetailUiState.Loading
         runCatching { source.getItemDetail(itemId) }
             .onSuccess { item ->
                 val seasons = item.seriesId
@@ -50,7 +54,10 @@ class DetailViewModel(
             }
             .onFailure { e ->
                 android.util.Log.w("LimeDetail", "详情加载失败 $itemId", e)
-                _state.value = DetailUiState.Error(e.message ?: "加载失败，请检查网络后重试")
+                // 手上有旧内容就继续用，只有真的什么都没有时才展示错误页
+                if (!hadContent) {
+                    _state.value = DetailUiState.Error(e.message ?: "加载失败，请检查网络后重试")
+                }
             }
     }
 
