@@ -48,6 +48,21 @@ interface MediaSource {
     suspend fun getEpisodes(seriesId: String): List<MediaItemDto> = emptyList()
 
     /**
+     * 首页「继续观看」（`03` §6.0）：服务端续播列表，按最近观看倒序。
+     *
+     * Emby / Jellyfin 走 `/Users/{userId}/Items/Resume`；**默认空** —— 没有续播概念的源
+     * （飞牛 / 本机）无需实现，首页会自动隐藏这一模块。
+     */
+    suspend fun getResumeItems(limit: Int = 20): List<MediaItemDto> = emptyList()
+
+    /**
+     * 首页「最近添加」：跨库最新入库条目（Emby / Jellyfin `/Users/{userId}/Items/Latest`）。
+     *
+     * **默认空**：不支持该端点的源返回空列表，首页退回只用各库的 `getItems()`。
+     */
+    suspend fun getLatestItems(limit: Int = 30): List<MediaItemDto> = emptyList()
+
+    /**
      * 写操作能力位：是否支持「标记已播放」（`02` §5.1）。UI 据此显隐按钮；
      * 不支持的源（飞牛 / 本机）保持默认 false。支持位为 false 时 [markPlayed] 不应被调用。
      */

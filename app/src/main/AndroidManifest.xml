@@ -26,13 +26,35 @@
         android:theme="@style/Theme.LimePlayer"
         android:networkSecurityConfig="@xml/network_security_config">
 
+        <!--
+          预测性返回（Predictive Back）**显式关闭**（2026-10-23 用户定）。
+          targetSdk 36 在 Android 16 上默认开启它，于是：
+            · App 内 pop：navigation-compose 会按手指位移 seek 转场 → 「跟手变透明」；
+            · 从根页面返回：系统播整窗缩向桌面图标的动画 → 「跟手缩小」。
+          两者都无法与左上角返回按钮的 300ms 动画保持一致。置 false 后，手势与按钮
+          走同一条 popBackStack()、同一段转场（见 nav/NavTransitions.kt）。
+          注意：`BackHandler` / `OnBackPressedCallback` 不受影响，仍然正常工作；
+                官方文档提示该开关在未来 Android 版本可能失效，届时只能改回
+                「保留预测性返回 + 用水平滑动转场让手势 seek」（改回时删掉这一行即可）。
+        -->
+        <!--
+          android:screenOrientation="portrait" —— **全局锁竖屏**（2026-10-24）：
+          播放页的「横屏」是假横屏（窗口竖着、整页内容转 90°），前提就是窗口永不旋转。
+          只有这样，「退出播放页」时才不会有任何窗口旋转动作（真机反馈的诉求）。
+          代价：主界面/详情页横着拿也是竖版布局（VidHub 就是这类做法）。
+
+          例外：Android 16 起 targetSdk ≥ 36 在**大屏**（≥600dp）会忽略该限制，
+          那时窗口本来就是横的 —— 播放页用 `windowIsLandscape` 守住，不再重复转 90°。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:supportsPictureInPicture="true"
+            android:enableOnBackInvokedCallback="false"
             android:theme="@style/Theme.LimePlayer"
-        android:networkSecurityConfig="@xml/network_security_config">
+            android:networkSecurityConfig="@xml/network_security_config">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

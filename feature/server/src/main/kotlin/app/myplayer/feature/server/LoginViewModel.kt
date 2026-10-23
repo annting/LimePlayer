@@ -29,6 +29,11 @@ class LoginViewModel(
     private val tokenStore: TokenStore,
     /** 登录成功后把这个服务器设为当前服务器（多服务器切换）。测试可不传。 */
     private val settingsStore: app.myplayer.core.datastore.SettingsStore? = null,
+    /**
+     * 用户自定义的服务器显示名（「修改服务器」里填的）。
+     * 非空时优先于服务端返回的账号名 —— 否则登录一过，自定义名称就被覆盖掉。
+     */
+    private val displayName: String? = null,
 ) {
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state
@@ -38,8 +43,10 @@ class LoginViewModel(
 
     suspend fun submit() {
         val s = _state.value
-        if (s.username.isBlank() || s.password.isBlank()) {
-            _state.value = s.copy(status = LoginStatus.ERROR, message = "请填写账号与密码")
+        // 只校验账号：Emby / Jellyfin 允许「无密码」账号（设置页的认证方式 = 无密码），
+        // 空密码照样发给服务端，由服务端裁决，本地不做前置拦截。
+        if (s.username.isBlank()) {
+            _state.value = s.copy(status = LoginStatus.ERROR, message = "请填写账号")
             return
         }
         _state.value = s.copy(status = LoginStatus.SUBMITTING, message = null)
@@ -51,7 +58,8 @@ class LoginViewModel(
                 ServerConfig(
                     id = serverId,
                     sourceType = sourceType,
-                    name = result.user.name ?: baseUrl,
+                    // 自定义名（修改服务器）> 服务端账号名 > 地址兜底
+                    name = displayName?.takeIf { it.isNotBlank() } ?: result.user.name ?: baseUrl,
                     baseUrl = baseUrl,
                     userId = result.user.id,
                 )

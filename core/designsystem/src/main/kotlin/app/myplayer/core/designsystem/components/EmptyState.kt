@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -22,11 +21,17 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.LocalAppColors
 
 /**
- * 统一空态（`docs/03` §3「空态」）：居中图标（品牌柔底圆角块）+ 标题 + 一句说明 +（可选）操作按钮。
- * 不使用插画。icon 传 null 时画一个播放三角占位。
+ * 统一空态（§3）：图标块（品牌柔底 + **12dp** 圆角）+ 标题 + 一句说明 + 可选主操作。
+ *
+ * 首页、搜索空态、详情错误态共用，保证三处间距一致。
+ *
+ * @param icon 官方 Material 图标（`ImageVector`）
+ * @param iconContent 自绘图标（项目里多数图标是 Canvas 画的，没有 `ImageVector`）——
+ *   给了它就优先于 [icon]，两者都为 null 时退回默认播放三角
  */
 @Composable
 fun EmptyState(
@@ -36,7 +41,9 @@ fun EmptyState(
     icon: ImageVector? = null,
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
+    iconContent: (@Composable () -> Unit)? = null,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -46,39 +53,41 @@ fun EmptyState(
     ) {
         Box(
             modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .size(56.dp)
+                .clip(AppShape.card)
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            if (icon != null) {
-                Icon(
-                    icon,
+            when {
+                iconContent != null -> iconContent()
+                icon != null -> Icon(
+                    imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.size(28.dp),
-                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(26.dp),
+                    tint = scheme.primary,
                 )
-            } else {
-                PlayGlyph(tint = MaterialTheme.colorScheme.primary)
+                else -> PlayGlyph(tint = scheme.primary)
             }
         }
         Text(
-            title,
+            text = title,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(top = 18.dp),
+            modifier = Modifier.padding(top = 16.dp),
         )
         if (description != null) {
             Text(
-                description,
+                text = description,
                 style = MaterialTheme.typography.labelSmall,
                 color = LocalAppColors.current.text3,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp).widthIn(max = 280.dp),
+                modifier = Modifier
+                    .padding(top = 6.dp)
+                    .widthIn(max = 280.dp),
             )
         }
         if (actionText != null && onAction != null) {
-            Box(Modifier.padding(top = 22.dp).widthIn(min = 180.dp)) {
+            Box(Modifier.padding(top = 20.dp).widthIn(min = 168.dp)) {
                 AppButton(text = actionText, onClick = onAction)
             }
         }

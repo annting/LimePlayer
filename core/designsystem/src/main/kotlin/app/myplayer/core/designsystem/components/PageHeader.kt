@@ -1,10 +1,7 @@
 package app.myplayer.core.designsystem.components
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,22 +10,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import app.myplayer.core.designsystem.AppShape
+import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
 
 /**
- * 页面顶栏（设计板 `.appbar`）：返回按钮 + 标题（19sp/600）+ 副标题（11.5sp text-3）+ 尾部动作。
- * 高 54dp；标题列自适应收起。
+ * 页面顶栏（§6 AppBar）：返回按钮 + 标题（19sp/600）+ 副标题（11.5sp `text3`）+ 尾部动作。
+ *
+ * 高 54dp，不画背景（跟随页面底色），保证与内容同层。
  */
 @Composable
 fun PageHeader(
@@ -42,7 +40,7 @@ fun PageHeader(
         modifier = modifier
             .fillMaxWidth()
             .height(54.dp)
-            .padding(start = if (onBack != null) 4.dp else 16.dp, end = 12.dp),
+            .padding(start = if (onBack != null) 4.dp else Dimens.pagePadding, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
@@ -55,10 +53,14 @@ fun PageHeader(
                 .weight(1f)
                 .padding(start = if (onBack != null) 4.dp else 0.dp),
         ) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
             if (subtitle != null) {
                 Text(
-                    subtitle,
+                    text = subtitle,
                     style = MaterialTheme.typography.labelSmall,
                     color = LocalAppColors.current.text3,
                     modifier = Modifier.padding(top = 2.dp),
@@ -69,25 +71,24 @@ fun PageHeader(
     }
 }
 
-/** 40dp 圆形图标按钮（设计板 `.icon-btn`）：按压缩放 0.9。 */
+/**
+ * 图标按钮：40dp、圆角 8dp、按压缩放 0.95。
+ *
+ * [shape] 允许调用方覆盖（如玩家页需要圆形时传 `AppShape.circle`）。
+ */
 @Composable
 fun CircleIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = AppShape.control,
     content: @Composable () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.9f else 1f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 900f),
-        label = "icon-scale",
-    )
     Box(
         modifier = modifier
-            .size(40.dp)
-            .scale(scale)
-            .clip(RoundedCornerShape(14.dp))
+            .size(Dimens.iconButton)
+            .pressScale(interaction, pressedScale = 0.95f)
+            .clip(shape)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }

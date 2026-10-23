@@ -17,9 +17,10 @@ class LoginViewModelTest {
         login: suspend (String, String) -> AuthResultDto,
         configs: InMemoryServerConfigStore = InMemoryServerConfigStore(),
         tokens: InMemoryTokenStore = InMemoryTokenStore(),
+        displayName: String? = null,
     ) = LoginViewModel(
         serverId = "s1", sourceType = SourceType.EMBY, baseUrl = "http://nas:8096",
-        login = login, configStore = configs, tokenStore = tokens,
+        login = login, configStore = configs, tokenStore = tokens, displayName = displayName,
     )
 
     @Test fun `登录成功写入配置与令牌且顺序正确`() = runTest {
@@ -58,5 +59,23 @@ class LoginViewModelTest {
         vm.submit()
         assertThat(called).isFalse()
         assertThat(vm.state.value.message).contains("请填写")
+    }
+
+    @Test fun `自定义名称优先于服务端账号名`() = runTest {
+        val configs = InMemoryServerConfigStore()
+        val vm = vm(
+            { _, _ -> AuthResultDto("TK", UserDto("u1", "bob")) },
+            configs,
+            displayName = "客厅 Emby",
+        )
+        vm.onUsernameChange("bob"); vm.onPasswordChange("pw"); vm.submit()
+        assertThat(configs.observeAll().first().single().name).isEqualTo("客厅 Emby")
+    }
+
+    @Test fun `名称为空白时回落到服务端账号名`() = runTest {
+        val configs = InMemoryServerConfigStore()
+        val vm = vm({ _, _ -> AuthResultDto("TK", UserDto("u1", "bob")) }, configs, displayName = "  ")
+        vm.onUsernameChange("bob"); vm.onPasswordChange("pw"); vm.submit()
+        assertThat(configs.observeAll().first().single().name).isEqualTo("bob")
     }
 }

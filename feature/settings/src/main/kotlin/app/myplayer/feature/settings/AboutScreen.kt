@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
+import app.myplayer.core.designsystem.LocalBottomNavSpace
 import app.myplayer.core.designsystem.components.PageHeader
 
 /**
@@ -35,7 +36,9 @@ fun AboutScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp)
-                .padding(bottom = 32.dp),
+                // 底部 = 悬浮导航高度（已含手势条 + 呼吸）：这层 padding 在 verticalScroll
+                // 之后，属于滚动内容的一部分 → 只在滚到底时留白，不会被导航胶囊压住
+                .padding(bottom = LocalBottomNavSpace.current),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(

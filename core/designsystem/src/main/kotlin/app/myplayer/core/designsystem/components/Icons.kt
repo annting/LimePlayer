@@ -275,3 +275,46 @@ fun SeekForward10Icon(tint: Color, modifier: Modifier = Modifier) = Icon(
     tint = tint,
     modifier = modifier.size(24.dp),
 )
+
+// ---- 设置列表用箭头 ----
+//
+// 自绘而不用 `Icons.Filled.KeyboardArrowRight`：那个图形在 18dp 下笔画偏粗，
+// 与设置行的 12.5sp 文字不等重；这里用 1.2dp 圆头折线，视觉更轻。
+
+/** 右向箭头（「跳转二级页面」行尾）。 */
+@Composable
+fun ChevronRightIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(16.dp)) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            moveTo(w * 0.36f, h * 0.22f)
+            lineTo(w * 0.64f, h * 0.5f)
+            lineTo(w * 0.36f, h * 0.78f)
+        }
+        drawPath(
+            path = path,
+            color = tint,
+            style = Stroke(width = w * 0.075f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+    }
+}
+
+/** 下向箭头（「点击展开下拉菜单」行尾）。 */
+@Composable
+fun ChevronDownIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(16.dp)) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            moveTo(w * 0.22f, h * 0.36f)
+            lineTo(w * 0.5f, h * 0.64f)
+            lineTo(w * 0.78f, h * 0.36f)
+        }
+        drawPath(
+            path = path,
+            color = tint,
+            style = Stroke(width = w * 0.075f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+    }
+}

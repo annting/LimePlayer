@@ -34,6 +34,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
+import app.myplayer.core.designsystem.LocalBottomNavSpace
+import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.components.AppChip
 import app.myplayer.core.designsystem.components.EmptyState
 import app.myplayer.core.designsystem.components.PageHeader
@@ -80,7 +82,7 @@ fun SearchScreen(
                 .focusRequester(focus),
             placeholder = { Text("输入片名 / 拼音 / 首字母") },
             singleLine = true,
-            shape = RoundedCornerShape(14.dp),
+            shape = AppShape.control,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
             trailingIcon = {
@@ -90,7 +92,7 @@ fun SearchScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = app.text3,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(999.dp))
+                            .clip(AppShape.control)
                             .clickable(onClick = onClear)
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     )
@@ -139,7 +141,12 @@ fun SearchScreen(
                 )
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(minSize = 132.dp),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        end = 16.dp,
+                        // 悬浮导航高度（含手势条 + 呼吸）
+                        bottom = LocalBottomNavSpace.current,
+                    ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {

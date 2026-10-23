@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
+import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.components.AppChip
 
 /**
@@ -70,7 +71,7 @@ fun SortFilterSheet(
                     color = scheme.primary,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(999.dp))
+                        .clip(AppShape.control)
                         .clickable(onClick = onReset)
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 )
@@ -192,7 +193,7 @@ fun SortFilterBar(
     ) {
         Row(
             Modifier
-                .clip(RoundedCornerShape(999.dp))
+                .clip(AppShape.control)
                 .background(scheme.surfaceVariant.copy(alpha = 0.6f))
                 .clickable(onClick = onClick)
                 .padding(horizontal = 12.dp, vertical = 7.dp),
@@ -206,7 +207,7 @@ fun SortFilterBar(
         }
         Row(
             Modifier
-                .clip(RoundedCornerShape(999.dp))
+                .clip(AppShape.control)
                 .background(
                     if (filter.isDefault) scheme.surfaceVariant.copy(alpha = 0.6f)
                     else scheme.primary.copy(alpha = 0.18f)

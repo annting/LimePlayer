@@ -1,19 +1,21 @@
 package app.myplayer.feature.player
 
 import android.app.Activity
+import android.hardware.SensorManager
 import android.content.Context
 import android.content.ContextWrapper
-import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.media.AudioManager
+import android.os.SystemClock
+import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.TextureView
 import android.graphics.SurfaceTexture
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -23,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -34,12 +37,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -69,6 +72,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -78,9 +82,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.myplayer.core.designsystem.MonoLabelStyle
+import app.myplayer.core.designsystem.PlayerTokens
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.CheckIcon
 import app.myplayer.core.designsystem.components.MoreVerticalIcon
@@ -116,6 +122,15 @@ fun PlayerScreen(
     modifier: Modifier = Modifier,
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     keepBackgroundPlayback: Boolean = false,
+    /** 设置页「画面 · 方向」：AUTO / 横屏 / 竖屏。播放页的按钮只做本次会话的临时覆盖。 */
+    defaultOrientation: PlayerOrientation = PlayerOrientation.AUTO,
+    /** 是否处于画中画：PiP 里必须取消假横屏，否则小窗画面侧躺（策略 A）。 */
+    inPictureInPicture: Boolean = false,
+    /**
+     * 上报给导航层：`landscape` = 逻辑上的横向（决定退场方向）；
+     * `fakeRotation` = 这个横向是靠内容转 90° 实现的（窗口仍是竖的，退场方向要换算）。
+     */
+    onLandscapeChange: (landscape: Boolean, fakeRotation: Boolean) -> Unit = { _, _ -> },
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     var indicator by remember { mutableStateOf<SystemIndicator?>(null) }
@@ -139,17 +154,68 @@ fun PlayerScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // 横竖屏切换：**只转播放器内容，不动系统方向**
-    //（对齐 VidHub「播放器内切换横竖屏、无需旋转设备」，2026-10-20）。
-    // 视频面因此必须是 TextureView —— SurfaceView 的画面在独立图层，实测不跟随任何 View/Compose 变换；
-    // 好处是退出播放页时系统方向从未变过，**没有任何旋转动作、也没有黑屏闪一下**。
-    var videoRotated by remember { mutableStateOf(false) }
     val activity = context.findActivity()
-    // 旋转态隐藏系统栏：系统栏永远按设备方向绘制，不隐藏会横在画面中间
-    LaunchedEffect(videoRotated) {
+
+    // 满窗口布局：锁定按钮 / 降级提示 / 拖动预览 / 连播浮层都要自己补系统栏，
+    // 理由见 [statusBarTopInset]（常规 statusBarsPadding 在这里被消费成 0）。
+    val statusBarTop = statusBarTopInset()
+    val navBarBottom = navBarBottomInset()
+
+    // ── 方向（2026-10-24 假横屏方案）─────────────────────────────────────────
+    // 方向机（谁说了算）沿用方案 A，**渲染**换成假横屏：窗口永远竖着（manifest 锁死），
+    // 「横屏」由整页内容转 90° 呈现。好处：
+    //   · 退出播放页时窗口方向从未变过 → 没有任何旋转动作（2026-10-24 用户诉求）；
+    //   · 视频/字幕/手势/控制层/快捷浮层**本来就在同一个舞台 Box 里**，一起转，语义自洽；
+    //   · 不会再出现「内容 90° + 窗口 90° = 180°」（BUG-2026-007）。
+    //
+    //   defaultOrientation（设置页「画面 · 方向」）
+    //   + forced（按钮 / 竖屏视频的默认锁定，一次性的）
+    //   + deviceLandscape（自己读传感器，400ms 稳定才认）
+    val deviceLandscape = rememberDeviceIsLandscape()
+    var forced by remember(state.item?.id) { mutableStateOf<PlayerOrientation?>(null) }
+    // 按钮式锁定在「设备自己转到位」后释放、回到跟随（VidHub 手感）；
+    // 竖屏视频的默认锁定是粘性的，只能用按钮解除。
+    var forcedByButton by remember(state.item?.id) { mutableStateOf(false) }
+
+    LaunchedEffect(deviceLandscape, forced, forcedByButton) {
+        if (forcedByButton && releasesOnDeviceMatch(forced, deviceLandscape)) {
+            forced = null
+            forcedByButton = false
+        }
+    }
+
+    // 竖屏视频默认锁竖屏（抖音口径：横过来只会缩成一条小画面）。
+    // 正方形 / 4:3 不在此列 —— 它们横过来反而更大，交给「跟随设备」。
+    LaunchedEffect(state.videoWidth, state.videoHeight, defaultOrientation) {
+        if (forced == null &&
+            defaultOrientation == PlayerOrientation.AUTO &&
+            isPortraitVideo(state.videoWidth, state.videoHeight)
+        ) {
+            forced = PlayerOrientation.PORTRAIT
+        }
+    }
+
+    val targetOrientation = resolvePlayerOrientation(defaultOrientation, forced, deviceLandscape)
+
+    // 窗口真实方向：手机上是竖的（manifest 锁死）；平板/折叠屏可能本来就是横的。
+    val windowIsLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    // 假横屏 = 窗口竖着 + 方向机要横 + 不在画中画（PiP 里必须取消，否则小窗画面侧躺）。
+    val fakeLandscape =
+        fakeLandscapeActive(targetOrientation, windowIsLandscape, inPictureInPicture)
+
+    // 逻辑上的「是否横向」：控制层版式、系统栏、退场方向都按它。
+    val landscapeNow = windowIsLandscape || fakeLandscape
+    LaunchedEffect(landscapeNow, fakeLandscape) {
+        onLandscapeChange(landscapeNow, fakeLandscape)
+    }
+
+    // 横屏隐藏系统栏：系统栏按窗口方向绘制，不隐藏会横在画面中间
+    LaunchedEffect(landscapeNow) {
         val window = activity?.window ?: return@LaunchedEffect
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        if (videoRotated) {
+        if (landscapeNow) {
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
@@ -157,13 +223,15 @@ fun PlayerScreen(
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }
-    // 退出兜底：把系统栏还回去（旋转态退出时更要）
+    // 退出兜底：系统栏还回去、复位横向上报。
+    // onDispose 在转场动画**跑完之后**才执行，所以不影响本次退场的方向判断。
     DisposableEffect(Unit) {
         onDispose {
             activity?.window?.let {
                 WindowCompat.getInsetsController(it, it.decorView)
                     .show(WindowInsetsCompat.Type.systemBars())
             }
+            onLandscapeChange(false, false)
         }
     }
 
@@ -182,14 +250,15 @@ fun PlayerScreen(
     val loading = state.error == null &&
         (state.status == EngineStatus.IDLE || state.status == EngineStatus.BUFFERING)
 
-    Box(modifier.fillMaxSize().background(Color.Black).clipToBounds()) {
+    Box(modifier.fillMaxSize().background(PlayerTokens.stage).clipToBounds()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
-            // 容器宽高对调 + 整体转 90°：等价于「按横屏尺寸布局」，但系统方向一点没变。
-            // 带过渡动画（VidHub 切换时有明显旋转，瞬切太生硬）：角度与尺寸一起插值。
+            // 假横屏：整页（视频 + 字幕 + 手势 + 控制层 + 快捷浮层）在竖屏窗口里转 90°。
+            // 宽高必须**对调**：转 90° 后要按横屏尺寸布局，否则视频会被挤成一条。
+            // 300ms 补间（用户 2026-10-24 选）：转的是整页，看起来就像屏幕转了方向。
             val rotateProgress by animateFloatAsState(
-                targetValue = if (videoRotated) 1f else 0f,
+                targetValue = if (fakeLandscape) 1f else 0f,
                 animationSpec = tween(durationMillis = ROTATE_ANIM_MS, easing = FastOutSlowInEasing),
-                label = "videoRotate",
+                label = "fakeLandscape",
             )
             val stageW = lerp(maxWidth, maxHeight, rotateProgress)
             val stageH = lerp(maxHeight, maxWidth, rotateProgress)
@@ -265,13 +334,13 @@ fun PlayerScreen(
         state.seekHint?.let { hint ->
             Text(
                 hint,
-                color = Color.White,
+                color = PlayerTokens.onMedia,
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier
                     .align(Alignment.Center)
                     .offset(y = (-76).dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.Black.copy(alpha = 0.72f))
+                    .background(PlayerTokens.controlScrim)
                     .padding(horizontal = 22.dp, vertical = 14.dp),
             )
         }
@@ -289,8 +358,16 @@ fun PlayerScreen(
                 onEnterPip = { context.findActivity()?.let { act -> enterPip(act, state) } },
                 onOpenSheet = vm::openSheet,
                 pipSupported = pipSupported,
-                landscape = videoRotated,
-                onToggleRotate = { videoRotated = !videoRotated },
+                landscape = landscapeNow,
+                onToggleRotate = {
+                    // 切到当前方向的反面；设备转到位后这次锁定会自动释放（见方向段的 LaunchedEffect）
+                    forcedByButton = true
+                    forced = if (landscapeNow) {
+                        PlayerOrientation.PORTRAIT
+                    } else {
+                        PlayerOrientation.LANDSCAPE
+                    }
+                },
             )
         }
 
@@ -298,7 +375,7 @@ fun PlayerScreen(
         if (loading) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
-                color = Color.White.copy(alpha = 0.9f),
+                color = PlayerTokens.onMedia.copy(alpha = 0.9f),
                 strokeWidth = 3.dp,
             )
         }
@@ -307,7 +384,7 @@ fun PlayerScreen(
         if (state.sheetVisible) {
             PlayerSettingsSheet(
                 state = state,
-                rotated = videoRotated,
+                rotated = landscapeNow,
                 onDismiss = vm::closeSheet,
                 onScaleMode = vm::setScaleMode,
                 onSpeed = vm::setSpeed,
@@ -319,9 +396,9 @@ fun PlayerScreen(
         if (state.locked) {
             PlayerIconButton(
                 onClick = vm::toggleLock,
-                modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp),
+                modifier = Modifier.align(Alignment.TopStart).padding(top = statusBarTop).padding(16.dp),
             ) {
-                LockOpenIcon(tint = Color.White)
+                LockOpenIcon(tint = PlayerTokens.onMedia)
             }
         }
 
@@ -330,14 +407,14 @@ fun PlayerScreen(
             Row(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .statusBarsPadding()
+                    .padding(top = statusBarTop)
                     .padding(top = 10.dp)
                     .clip(RoundedCornerShape(999.dp))
-                    .background(Color.Black.copy(alpha = 0.72f))
+                    .background(PlayerTokens.controlScrim)
                     .padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(notice, color = Color.White.copy(alpha = 0.9f), style = MaterialTheme.typography.labelMedium)
+                Text(notice, color = PlayerTokens.onMedia.copy(alpha = 0.9f), style = MaterialTheme.typography.labelMedium)
             }
         }
 
@@ -350,7 +427,7 @@ fun PlayerScreen(
                     positionMs = state.scrubPositionMs,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
+                        .padding(bottom = navBarBottom)
                         .padding(bottom = 132.dp),
                 )
             }
@@ -367,7 +444,7 @@ fun PlayerScreen(
                 onCancel = vm::cancelNextUp,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
+                    .padding(bottom = navBarBottom)
                     .padding(end = 16.dp, bottom = 96.dp),
             )
         }
@@ -487,6 +564,29 @@ private fun GestureLayer(
                         )
                     },
                 )
+            }
+            // 横向拖动 = 拖进度（2026-10-24 用户选：「拖动进度」）。
+            // 它同时修掉一个误触：以前横向滑动没有任何手势认领，抬手会被
+            // `detectTapGestures` 当成单击 → 控制层（进度条）莫名弹出来。
+            .pointerInput(locked) {
+                if (locked) return@pointerInput
+                var baseMs = 0L
+                var widthPx = 1f
+                var accumulatedX = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = {
+                        widthPx = size.width.toFloat().coerceAtLeast(1f)
+                        baseMs = vm.ui.value.positionMs
+                        accumulatedX = 0f
+                        vm.beginScrub()
+                    },
+                    onHorizontalDrag = { _, dragAmount ->
+                        accumulatedX += dragAmount
+                        vm.scrubTo(baseMs + seekDeltaMs(accumulatedX, widthPx))
+                    },
+                    onDragEnd = { vm.commitScrub() },
+                    onDragCancel = { vm.cancelScrub() },
+                )
             },
     )
 }
@@ -497,13 +597,13 @@ private fun SystemIndicatorOverlay(indicator: SystemIndicator?, modifier: Modifi
         Column(
             Modifier
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color.Black.copy(alpha = 0.72f))
+                .background(PlayerTokens.controlScrim)
                 .padding(horizontal = 22.dp, vertical = 14.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 if (indicator?.kind == SystemIndicator.Kind.BRIGHTNESS) "亮度" else "音量",
-                color = Color.White,
+                color = PlayerTokens.onMedia,
                 style = MaterialTheme.typography.labelMedium,
             )
             Spacer(Modifier.height(8.dp))
@@ -512,7 +612,7 @@ private fun SystemIndicatorOverlay(indicator: SystemIndicator?, modifier: Modifi
                     .width(140.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.25f)),
+                    .background(PlayerTokens.track),
             ) {
                 Box(
                     Modifier
@@ -525,7 +625,141 @@ private fun SystemIndicatorOverlay(indicator: SystemIndicator?, modifier: Modifi
     }
 }
 
+// ---- 方向 ----
+
+/**
+ * 播放页方向（设置页「画面 · 方向」的三种取值）。
+ *
+ * 播放模块**不依赖** `core:datastore`（分层要求），所以在 app 层把
+ * `ScreenOrientation` 映射成它，模块内部只认这一套。
+ */
+enum class PlayerOrientation { AUTO, LANDSCAPE, PORTRAIT }
+
+/**
+ * 「竖屏视频」的宽高比上限：只有明显比竖的才默认锁竖屏。
+ *
+ * 正方形（1:1 = 1.0）与 4:3（1.33）**不锁** —— 它们横过来只会更大（高度铺满），
+ * 锁住反而挡住用户；9:16（0.56）、3:4（0.75）横过来会缩成一条小画面，才值得锁。
+ */
+internal const val PORTRAIT_VIDEO_MAX_ASPECT = 0.85f
+
+/** 视频是否「竖屏画幅」（宽高比 < [PORTRAIT_VIDEO_MAX_ASPECT]）。 */
+internal fun isPortraitVideo(width: Int, height: Int): Boolean =
+    width > 0 && height > 0 && width.toFloat() / height < PORTRAIT_VIDEO_MAX_ASPECT
+
+/**
+ * 当前应该请求的窗口方向（只会是横或竖，不会是 `AUTO`）。
+ *
+ * 优先级：`forced`（按钮 / 竖屏视频默认锁定）> 设置页默认值 > 跟随设备。
+ */
+internal fun resolvePlayerOrientation(
+    default: PlayerOrientation,
+    forced: PlayerOrientation?,
+    deviceLandscape: Boolean,
+): PlayerOrientation = when (forced ?: default) {
+    PlayerOrientation.LANDSCAPE -> PlayerOrientation.LANDSCAPE
+    PlayerOrientation.PORTRAIT -> PlayerOrientation.PORTRAIT
+    PlayerOrientation.AUTO ->
+        if (deviceLandscape) PlayerOrientation.LANDSCAPE else PlayerOrientation.PORTRAIT
+}
+
+/**
+ * 按钮式锁定何时释放：**设备自己转到了锁定方向**。
+ *
+ * 这就是 VidHub 的手感 ——「点一下先转过去，把手机转到位之后就跟回设备」。
+ * 竖屏视频那种默认锁定不走这条（它是粘性的，只能用按钮解除）。
+ */
+internal fun releasesOnDeviceMatch(forced: PlayerOrientation?, deviceLandscape: Boolean): Boolean =
+    when (forced) {
+        PlayerOrientation.LANDSCAPE -> deviceLandscape
+        PlayerOrientation.PORTRAIT -> !deviceLandscape
+        else -> false
+    }
+
+/** 传感器角度 → 是否横屏。45° 分界，避免斜着拿的时候来回抖。 */
+internal fun isLandscapeAngle(degrees: Int): Boolean =
+    degrees in 45..134 || degrees in 226..314
+
+/**
+ * 设备是否横着 —— **自己读传感器**，稳定 [debounceMs] 才认。
+ *
+ * 为什么不直接交给系统转：播放器不该被系统「自动旋转」开关限制（Emby 同款做法），
+ * 而且自己判才能做去抖，避免掏手机 / 斜拿时反复翻转（抖音那条 2~3s 就是同类逻辑）。
+ */
+@Composable
+private fun rememberDeviceIsLandscape(debounceMs: Long = 400L): Boolean {
+    val context = LocalContext.current
+    val initial = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    var isLandscape by remember { mutableStateOf(initial) }
+    DisposableEffect(context) {
+        val manager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        if (manager == null) return@DisposableEffect onDispose {}
+        val listener = object : OrientationEventListener(context, SensorManager.SENSOR_DELAY_NORMAL) {
+            private var committed = initial
+            private var candidate = initial
+            private var candidateSince = 0L
+
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val next = isLandscapeAngle(orientation)
+                val now = SystemClock.elapsedRealtime()
+                if (next != candidate) {
+                    candidate = next
+                    candidateSince = now
+                    return
+                }
+                if (candidate != committed && now - candidateSince >= debounceMs) {
+                    committed = candidate
+                    isLandscape = candidate
+                }
+            }
+        }
+        if (listener.canDetectOrientation()) listener.enable()
+        onDispose { listener.disable() }
+    }
+    return isLandscape
+}
+
+/**
+ * 是否启用「假横屏」（窗口竖着、内容转 90°）。
+ *
+ * 三个条件缺一不可：
+ * 1. 方向机要横向；
+ * 2. 窗口本身是竖的 —— 平板/折叠屏上 Android 16 会忽略 `screenOrientation`，窗口已经是横的，
+ *    再转 90° 就歪了；
+ * 3. 不在画中画 —— PiP 窗口按 Activity 内容渲染，转 90° 会让小窗画面侧躺（策略 A）。
+ */
+internal fun fakeLandscapeActive(
+    target: PlayerOrientation,
+    windowIsLandscape: Boolean,
+    inPictureInPicture: Boolean,
+): Boolean = !windowIsLandscape && !inPictureInPicture && target == PlayerOrientation.LANDSCAPE
+
 // ---- 控制层 ----
+
+
+/**
+ * 状态栏高度的**原始值**（px → dp）。
+ *
+ * 播放页是满窗口的：外层 `PlayerRoute` 用负偏移把内容顶回窗口原点（贴满状态栏 / 手势条），
+ * 而 `MainActivity` 已经用 `windowInsetsPadding` 把 safeDrawing **消费**掉了 ——
+ * Compose 的 `.statusBarsPadding()` / `.navigationBarsPadding()` 会扣掉已消费部分，
+ * 在这里恒为 0，控制层就会直接压在系统栏上
+ *（2026-10-24 真机：竖屏播放时标题 / 返回按钮与时间、信号、电池重叠）。
+ *
+ * `WindowInsets.xxx.getTop/getBottom` 不走消费链路，读到的正好是 `PlayerRoute` 抵消的量。
+ * 横屏旋转态系统栏已隐藏，这些值自然是 0，行为不变。
+ */
+@Composable
+private fun statusBarTopInset() = with(LocalDensity.current) {
+    WindowInsets.statusBars.getTop(this).toDp()
+}
+
+/** 手势条高度的原始值，理由见 [statusBarTopInset]。 */
+@Composable
+private fun navBarBottomInset() = with(LocalDensity.current) {
+    WindowInsets.navigationBars.getBottom(this).toDp()
+}
 
 @Composable
 private fun PlayerControls(
@@ -535,7 +769,10 @@ private fun PlayerControls(
     onEnterPip: () -> Unit,
     onOpenSheet: () -> Unit,
     pipSupported: Boolean,
-    /** 舞台当前是横屏版式（窗口内旋转，不是系统方向）。 */
+    /**
+     * 舞台当前是横屏版式：**系统横屏** 或 **内容转了 90°**，两者都算。
+     * （不是「系统方向」也不是「按钮状态」—— 只有把两条路径合并，布局判断才一致）
+     */
     landscape: Boolean,
     onToggleRotate: () -> Unit,
 ) {
@@ -543,6 +780,11 @@ private fun PlayerControls(
     val isLandscape = landscape
     // 当前展开的快捷浮层（速率 / 字幕 / 画面比例），null = 无
     var openPanel by remember { mutableStateOf<QuickPanel?>(null) }
+
+    // 方向一变就收起浮层（2026-10-24 用户要求）。
+    // 面板是按「芯片在舞台里的坐标」定位的，旋转那 300ms 里舞台尺寸和角度一直在变，
+    // 留着会看到面板追着按钮跑、甚至飞出屏幕。收起比跟着算更干净。
+    LaunchedEffect(landscape) { openPanel = null }
 
     // 面板展开期间保活控制层：否则 3s 自动隐藏会把面板一起带走
     LaunchedEffect(openPanel) {
@@ -560,6 +802,11 @@ private fun PlayerControls(
     val chipAnchors = remember { androidx.compose.runtime.mutableStateMapOf<QuickPanel, androidx.compose.ui.geometry.Rect>() }
     // 系统返回键：面板打开时先关面板，而不是直接退播放页
     androidx.activity.compose.BackHandler(enabled = openPanel != null) { openPanel = null }
+
+    // 播放页是**满窗口**的：见 [statusBarTopInset] —— 必须读原始 inset，
+    // 常规的 `.statusBarsPadding()` 在这里恒为 0（已被 MainActivity 消费）。
+    val statusBarTop = statusBarTopInset()
+    val navBarBottom = navBarBottomInset()
 
     Box(Modifier.fillMaxSize().onGloballyPositioned { stageCoords = it }) {
         // 点空白处关面板（最底层，按钮行仍可点）
@@ -581,20 +828,20 @@ private fun PlayerControls(
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Black.copy(alpha = 0.65f), Color.Transparent)
+                        listOf(PlayerTokens.scrimTop, Color.Transparent)
                     )
                 )
-                .statusBarsPadding()
+                .padding(top = statusBarTop)
                 .padding(horizontal = 6.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PlayerIconButton(onClick = onBack, size = 40.dp, background = Color.Transparent) {
-                BackIcon(tint = Color.White)
+                BackIcon(tint = PlayerTokens.onMedia)
             }
             Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
                 Text(
                     state.item?.title.orEmpty(),
-                    color = Color.White,
+                    color = PlayerTokens.onMedia,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -602,7 +849,7 @@ private fun PlayerControls(
                 episodeLine(state.item)?.let {
                     Text(
                         it,
-                        color = Color.White.copy(alpha = 0.62f),
+                        color = PlayerTokens.onMedia.copy(alpha = 0.62f),
                         style = MaterialTheme.typography.labelMedium,
                         maxLines = 1,
                     )
@@ -610,11 +857,11 @@ private fun PlayerControls(
             }
             // 锁与「更多」收紧到 34dp：两者图标只有 18dp，40dp 时中间空了 22dp（2026-10-19 反馈）
             PlayerIconButton(onClick = vm::toggleLock, size = 34.dp, background = Color.Transparent) {
-                LockOpenIcon(tint = Color.White)
+                LockOpenIcon(tint = PlayerTokens.onMedia)
             }
             // 完整设置面板入口（右上角、锁定按钮右侧）
             PlayerIconButton(onClick = onOpenSheet, size = 34.dp, background = Color.Transparent) {
-                MoreVerticalIcon(tint = Color.White)
+                MoreVerticalIcon(tint = PlayerTokens.onMedia)
             }
         }
 
@@ -630,21 +877,21 @@ private fun PlayerControls(
                 PlayerIconButton(
                     onClick = { vm.notifyInteraction(); onEnterPip() },
                     size = 40.dp,
-                    background = Color.White.copy(alpha = 0.10f),
+                    background = PlayerTokens.onMedia.copy(alpha = 0.10f),
                 ) {
-                    PictureInPictureIcon(tint = Color.White.copy(alpha = 0.9f))
+                    PictureInPictureIcon(tint = PlayerTokens.onMedia.copy(alpha = 0.9f))
                 }
             }
             PlayerIconButton(
                 onClick = {
                     vm.notifyInteraction()
-                    // **只转播放器内容**，不动系统方向（VidHub 同款做法）
+                    // 请求窗口转向（不是转内容）：设备转到位后这次锁定会自动释放
                     onToggleRotate()
                 },
                 size = 40.dp,
-                background = Color.White.copy(alpha = 0.10f),
+                background = PlayerTokens.onMedia.copy(alpha = 0.10f),
             ) {
-                ScreenRotateIcon(tint = Color.White.copy(alpha = 0.9f))
+                ScreenRotateIcon(tint = PlayerTokens.onMedia.copy(alpha = 0.9f))
             }
         }
 
@@ -655,10 +902,10 @@ private fun PlayerControls(
                 .fillMaxWidth()
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
+                        listOf(Color.Transparent, PlayerTokens.scrimBottom)
                     )
                 )
-                .navigationBarsPadding()
+                .padding(bottom = navBarBottom)
                 .padding(horizontal = 16.dp)
                 .padding(top = 26.dp, bottom = 6.dp),
         ) {
@@ -678,20 +925,20 @@ private fun PlayerControls(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(formatTime(state.displayPositionMs), color = Color.White, style = MonoLabelStyle)
+                Text(formatTime(state.displayPositionMs), color = PlayerTokens.onMedia, style = MonoLabelStyle)
                 Spacer(Modifier.weight(1f))
                 if (isLandscape) {
                     val remainMs = (state.durationMs - state.displayPositionMs).coerceAtLeast(0L)
                     Text(
                         "-${formatTime(remainMs)}",
-                        color = Color.White.copy(alpha = 0.58f),
+                        color = PlayerTokens.onMedia.copy(alpha = 0.58f),
                         style = MonoLabelStyle,
                     )
                     Spacer(Modifier.width(16.dp))
                 }
                 Text(
                     formatTime(state.durationMs),
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = PlayerTokens.onMedia.copy(alpha = 0.72f),
                     style = MonoLabelStyle,
                 )
             }
@@ -711,7 +958,7 @@ private fun PlayerControls(
                         size = 36.dp,
                         background = Color.Transparent,
                     ) {
-                        SeekBack10Icon(tint = Color.White)
+                        SeekBack10Icon(tint = PlayerTokens.onMedia)
                     }
                     Box(
                         Modifier
@@ -720,14 +967,14 @@ private fun PlayerControls(
                             .clickable { vm.togglePlayPause() },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (state.isPlaying) PauseIcon(tint = Color.White) else PlayIcon(tint = Color.White)
+                        if (state.isPlaying) PauseIcon(tint = PlayerTokens.onMedia) else PlayIcon(tint = PlayerTokens.onMedia)
                     }
                     PlayerIconButton(
                         onClick = { vm.seekBy(DOUBLE_TAP_SEEK_MS) },
                         size = 36.dp,
                         background = Color.Transparent,
                     ) {
-                        SeekForward10Icon(tint = Color.White)
+                        SeekForward10Icon(tint = PlayerTokens.onMedia)
                     }
                 Spacer(Modifier.weight(1f))
                 ControlChip(
@@ -834,7 +1081,7 @@ private fun ControlChip(
     ) {
         Text(
             text,
-            color = if (active) Color.White else Color.White.copy(alpha = 0.86f),
+            color = if (active) PlayerTokens.onMedia else PlayerTokens.onMedia.copy(alpha = 0.86f),
             style = MaterialTheme.typography.labelLarge,
             maxLines = 1,
             modifier = Modifier
@@ -914,12 +1161,12 @@ private fun QuickListPanel(
             .widthIn(min = 88.dp)
             .clip(RoundedCornerShape(14.dp))
             // 黑灰而非纯黑：视频下缘本身就是黑的，纯黑浮层看不出边界（2026-10-19 反馈）
-            .background(Color(0xFF2B2B2F))
+            .background(PlayerTokens.panel)
             .padding(bottom = 6.dp),
     ) {
         Text(
             title,
-            color = Color.White.copy(alpha = 0.55f),
+            color = PlayerTokens.onMedia.copy(alpha = 0.55f),
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 2.dp),
         )
@@ -945,12 +1192,12 @@ private fun QuickListRow(option: QuickOption) {
         // 对号占位：未选中也留同样宽度，文字左边缘保持对齐
         Box(Modifier.width(18.dp)) {
             if (option.selected) {
-                CheckIcon(tint = Color.White, modifier = Modifier.size(14.dp))
+                CheckIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(14.dp))
             }
         }
         Text(
             option.label,
-            color = if (option.selected) Color.White else Color.White.copy(alpha = 0.68f),
+            color = if (option.selected) PlayerTokens.onMedia else PlayerTokens.onMedia.copy(alpha = 0.68f),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (option.selected) FontWeight.SemiBold else FontWeight.Normal,
         )
@@ -963,7 +1210,7 @@ private fun PlayerIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
-    background: Color = Color.White.copy(alpha = 0.12f),
+    background: Color = PlayerTokens.chipScrim,
     content: @Composable () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -994,22 +1241,22 @@ private fun PlaybackErrorOverlay(
     Column(
         modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = 0.82f))
+            .background(PlayerTokens.panelScrim)
             .padding(horizontal = 28.dp, vertical = 22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("播放失败", color = Color.White, style = MaterialTheme.typography.titleMedium)
+        Text("播放失败", color = PlayerTokens.onMedia, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
             "错误码 ${error.code}",
-            color = Color.White.copy(alpha = 0.6f),
+            color = PlayerTokens.onMedia.copy(alpha = 0.6f),
             style = MonoLabelStyle,
         )
         error.message?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(6.dp))
             Text(
                 it,
-                color = Color.White.copy(alpha = 0.55f),
+                color = PlayerTokens.onMedia.copy(alpha = 0.55f),
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
@@ -1028,7 +1275,7 @@ private fun PlaybackErrorOverlay(
             Spacer(Modifier.width(12.dp))
             Text(
                 "返回",
-                color = Color.White.copy(alpha = 0.75f),
+                color = PlayerTokens.onMedia.copy(alpha = 0.75f),
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
@@ -1057,18 +1304,18 @@ private fun NextUpCard(
         modifier
             .width(260.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black.copy(alpha = 0.84f))
+            .background(PlayerTokens.panelScrim)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Text(
             if (countdown > 0) "${countdown}s 后播放下一集" else "下一集",
-            color = Color.White.copy(alpha = 0.6f),
+            color = PlayerTokens.onMedia.copy(alpha = 0.6f),
             style = MaterialTheme.typography.labelSmall,
         )
         Spacer(Modifier.height(4.dp))
         Text(
             nextEpisode?.title ?: "下一集",
-            color = Color.White,
+            color = PlayerTokens.onMedia,
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1078,7 +1325,7 @@ private fun NextUpCard(
             if (hasPrevious) {
                 Text(
                     "上一集",
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = PlayerTokens.onMedia.copy(alpha = 0.8f),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier
                         .clip(RoundedCornerShape(999.dp))
@@ -1099,7 +1346,7 @@ private fun NextUpCard(
             Spacer(Modifier.weight(1f))
             Text(
                 "取消",
-                color = Color.White.copy(alpha = 0.6f),
+                color = PlayerTokens.onMedia.copy(alpha = 0.6f),
                 style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier
                     .clip(RoundedCornerShape(999.dp))
@@ -1176,4 +1423,18 @@ private fun setVolumeRatio(audio: AudioManager?, value: Float) {
 }
 
 /** 横竖屏切换的过渡时长（毫秒）。 */
-private const val ROTATE_ANIM_MS = 320
+
+/** 假横屏的旋转时长（用户 2026-10-24 选 300ms）。 */
+private const val ROTATE_ANIM_MS = 300
+
+/** 横向手势：扫过整屏宽度对应的进度跨度（毫秒）。 */
+internal const val SEEK_FULL_WIDTH_MS = 90_000f
+
+/**
+ * 横向拖动位移 → 进度增量（毫秒）。
+ *
+ * 扫过整屏宽 = [SEEK_FULL_WIDTH_MS]（90s）：对两小时的电影够精细，短片由 `scrubTo` 自己 coerce。
+ * 抽成纯函数是为了能单测钉住 —— 正负号写反（左滑变快进）在真机上只表现为「怪怪的」。
+ */
+internal fun seekDeltaMs(dragPx: Float, widthPx: Float): Long =
+    if (widthPx <= 0f) 0L else (dragPx / widthPx * SEEK_FULL_WIDTH_MS).toLong()

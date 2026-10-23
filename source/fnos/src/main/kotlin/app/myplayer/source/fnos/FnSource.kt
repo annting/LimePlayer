@@ -153,6 +153,7 @@ class FnSource(
                 communityRating = o.str("vote_average")?.toFloatOrNull()?.takeIf { it > 0f },
                 libraryId = o.str("ancestor_guid"),
                 hasPoster = poster != null,
+                imageTags = if (poster != null) setOf("Primary") else emptySet(),
                 playCount = o.int("watched") ?: 0,
                 userData = UserData(
                     isPlayed = (o.int("watched") ?: 0) > 0,
@@ -162,6 +163,17 @@ class FnSource(
         }
         return PagedResult(items, total, 0)
     }
+
+    /**
+     * 首页「最近添加」：`item/list` 的默认排序就是 `create_time DESC`，不传 `ancestor_guid`
+     * 即为**跨库**最新入库，与 Emby 的 `/Items/Latest` 语义近似。
+     *
+     * 「继续观看」暂不实现（走 [MediaSource.getResumeItems] 的默认空实现）：飞牛没有公开的
+     * 续播列表端点，逐条 `play/info` 探测进度会真的起转码会话（`play/play` 堆积风险，
+     * 见类注释），首页隐藏该模块比拖垮 NAS 更划算。
+     */
+    override suspend fun getLatestItems(limit: Int): List<MediaItemDto> =
+        getItems(ItemQuery(limit = limit)).items
 
     override suspend fun getItemDetail(id: String): MediaItemDto {
         val (session, meta) = resolvePlayInfo(id)
@@ -180,6 +192,7 @@ class FnSource(
             communityRating = meta.str("vote_average")?.toFloatOrNull()?.takeIf { it > 0f },
             libraryId = meta.str("ancestor_guid"),
             hasPoster = posterOf[id] != null,
+            imageTags = if (posterOf[id] != null) setOf("Primary") else emptySet(),
             userData = UserData(
                 isPlayed = (meta.int("is_watched") ?: meta.int("watched") ?: 0) > 0,
                 resumePositionTicks = Ticks(session.resumeSec * TICKS_PER_SECOND),

@@ -50,6 +50,13 @@ class HttpMediaApi(
     suspend fun getPublicSystemInfo(): PublicSystemInfoDto =
         execute(Request.Builder().url(url("/System/Info/Public")).build())
 
+    /**
+     * 当前用户 —— **API Key 登录**用：拿 API Key 当令牌直接查 `/Users/Me`，
+     * 既能校验 key 有效，又能拿到 `userId`（`MediaSource` 取数接口要求它非空）。
+     */
+    suspend fun getCurrentUser(): UserDto =
+        execute(Request.Builder().url(url("/Users/Me")).applyAuth().build())
+
     suspend fun authenticateByName(username: String, password: String): AuthResultDto {
         val payload = """{"Username":"${username.esc()}","Pw":"${password.esc()}"}"""
         val request = Request.Builder()
@@ -104,8 +111,53 @@ class HttpMediaApi(
         return PagedResult(dto.items, dto.totalRecordCount, startIndex)
     }
 
-    /** 详情查询：`Fields` 显式补 `Overview`（`05` §2.2：真机未下发时的兜底口径）。 */
-    suspend fun getItemDetail(itemId: String, userId: String): BaseItemDto =
+    /**
+     * 首页「继续观看」：`/Users/{userId}/Items/Resume`（Emby / Jellyfin 同端点）。
+     *
+     * 只取视频类（`MediaTypes=Video`）—— 音频续播不进首页；`Limit` 控制条数，
+     * 卡片横滑行 20 条足够。`UserData` 必带（进度条与剩余时长都靠它）。
+     */
+    suspend fun getResumeItems(userId: String, limit: Int): List<BaseItemDto> =
+        execute<ItemsResponseDto>(
+            Request.Builder()
+                .url(
+                    url(
+                        "/Users/$userId/Items/Resume",
+                        mapOf(
+                            "Limit" to limit.toString(),
+                            "MediaTypes" to "Video",
+                            "Recursive" to "true",
+                            "Fields" to "MediaSources,UserData,Genres",
+                        ),
+                    )
+                )
+                .applyAuth().build()
+        ).items
+
+    /**
+     * 首页「最近添加」：`/Users/{userId}/Items/Latest`。
+     *
+     * ⚠️ 该端点返回的是**裸数组**（`BaseItemDto[]`），不是 `{Items,TotalRecordCount}` ——
+     * 用 [ItemsResponseDto] 解析会直接抛序列化异常。`GroupItems=false` 避免服务端把
+     * 同一部剧的多集合并成一条（否则「最近添加」里全是剧集首集）。
+     */
+    suspend fun getLatestItems(userId: String, limit: Int): List<BaseItemDto> =
+        execute<List<BaseItemDto>>(
+            Request.Builder()
+                .url(
+                    url(
+                        "/Users/$userId/Items/Latest",
+                        mapOf(
+                            "Limit" to limit.toString(),
+                            "GroupItems" to "false",
+                            "Fields" to "MediaSources,UserData,Genres",
+                        ),
+                    )
+                )
+                .applyAuth().build()
+        )
+
+    /** 详情查询：`Fields` 显式补 `Overview`（`05` §2.2：真机未下发时的兜底口径）。 */    suspend fun getItemDetail(itemId: String, userId: String): BaseItemDto =
         execute(Request.Builder().url(url("/Users/$userId/Items/$itemId", mapOf("Fields" to "MediaSources,UserData,Genres,People,Overview"))).applyAuth().build())
 
     suspend fun getPlaybackInfo(itemId: String, userId: String, deviceProfileJson: String): PlaybackInfoResponseDto =

@@ -42,16 +42,33 @@ abstract class HttpMediaSource(
     /** 无海报时直接返回 [ImageSource.None]；有海报时 URL 不带令牌，令牌走 headers（由 Coil 注入）。 */
     override suspend fun image(item: MediaItemDto, kind: ImageKind, size: ImageSize): ImageSource {
         if (kind == ImageKind.POSTER && !item.hasPoster) return ImageSource.None
+        // 16:9 卡片要的 Thumb，电影往往没有（只有 Primary 2:3 + Backdrop）：按优先级链挑实际存在的那个，
+        // 避免拿一个必然 404 的地址让首页卡片空着。`imageTags` 为空 = 老缓存，沿用旧的按 kind 直取。
         val kindName = when (kind) {
             ImageKind.POSTER -> "Primary"
-            ImageKind.BACKDROP -> "Backdrop"
-            ImageKind.THUMB -> "Thumb"
-            ImageKind.LOGO -> "Logo"
-        }
+            ImageKind.BACKDROP -> resolveImageKind(item, "Backdrop", "Primary")
+            ImageKind.THUMB -> resolveImageKind(item, "Thumb", "Backdrop", "Primary")
+            ImageKind.LOGO -> resolveImageKind(item, "Logo")
+        } ?: return ImageSource.None
         return ImageSource.Remote(
             url = api.imageUrl(item.id, kindName, size.px),
             headers = api.authHeaders(),
         )
+    }
+
+    /**
+     * 首页「继续观看」：`/Items/Resume`，已由服务端按最近观看倒序排好。
+     * 未登录时返回空列表（首页显示「还没有内容」，不是错误态）。
+     */
+    override suspend fun getResumeItems(limit: Int): List<MediaItemDto> {
+        val userId = api.config.userId ?: return emptyList()
+        return api.getResumeItems(userId, limit).map { mapItem(it, libraryId = null) }
+    }
+
+    /** 首页「最近添加」：`/Items/Latest`（跨库、按入库时间倒序）。 */
+    override suspend fun getLatestItems(limit: Int): List<MediaItemDto> {
+        val userId = api.config.userId ?: return emptyList()
+        return api.getLatestItems(userId, limit).map { mapItem(it, libraryId = null) }
     }
 
     /**
@@ -119,6 +136,15 @@ abstract class HttpMediaSource(
     /** 人物头像与条目图片同端点形态（Primary），鉴权走请求头。 */
     override suspend fun personImage(personId: String, size: ImageSize): ImageSource =
         ImageSource.Remote(api.personImageUrl(personId, size.px), api.authHeaders())
+
+    /**
+     * 依优先级从 [MediaItemDto.imageTags] 里挑一个**服务端确实存在**的图片类型。
+     * `imageTags` 为空（老缓存 / 源没下发）→ 取首选，保持旧行为；全不匹配 → null（不发请求）。
+     */
+    private fun resolveImageKind(item: MediaItemDto, vararg chain: String): String? {
+        if (item.imageTags.isEmpty()) return chain.first()
+        return chain.firstOrNull { it in item.imageTags }
+    }
 
     private suspend fun plan(
         item: MediaItemDto,

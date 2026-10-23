@@ -27,6 +27,9 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import android.widget.Toast
 import app.myplayer.core.designsystem.AppRadius
+import app.myplayer.core.designsystem.AppShape
+import app.myplayer.core.designsystem.Dimens
+import app.myplayer.core.designsystem.PlayerTokens
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.MonoLabelStyle
 import app.myplayer.core.designsystem.components.AppButton
@@ -123,13 +126,22 @@ private fun DetailContent(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            // MainActivity 只统一避让 Top + Horizontal（首页悬浮导航要透底），
+            // 详情页没有悬浮导航，手势条得自己让出来。放在 verticalScroll **之后**：
+            // padding 落进滚动内容里，滚到底时末尾留白；若放在前面等于裁 viewport，
+            // 滚动过程中底部会一直空一条。
+            .navigationBarsPadding(),
+    ) {
         HeroHeader(
             item = item,
             poster = rememberItemImage(item, ImageKind.POSTER, loadImage),
         )
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(16.dp))
+        Column(Modifier.fillMaxWidth().padding(horizontal = Dimens.pagePadding)) {
+            Spacer(Modifier.height(Dimens.pagePadding))
             val resume = item.resumeState()
             AppButton(
                 text = primaryActionLabel(item),
@@ -144,18 +156,18 @@ private fun DetailContent(
                 AppButton(
                     text = markPlayedLabel(item),
                     onClick = { onMarkPlayed(!item.userData.isPlayed) },
-                    style = AppButtonStyle.Tonal,
+                    style = AppButtonStyle.Outlined,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
 
             if (seasons.isNotEmpty()) {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(Dimens.sectionGap))
                 SeasonSection(seasons, loadImage, onPlay)
             }
 
             item.overview?.takeIf { it.isNotBlank() }?.let { overview ->
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(Dimens.sectionGap))
                 SectionTitle("简介")
                 Spacer(Modifier.height(8.dp))
                 Text(
@@ -166,18 +178,18 @@ private fun DetailContent(
             }
 
             if (item.people.isNotEmpty()) {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(Dimens.sectionGap))
                 SectionTitle("演职员")
                 Spacer(Modifier.height(10.dp))
                 CastAvatarGrid(item.people, loadPersonImage, onPersonClick)
             } else if (item.cast.isNotEmpty()) {
-                Spacer(Modifier.height(22.dp))
+                Spacer(Modifier.height(Dimens.sectionGap))
                 SectionTitle("演职员")
                 Spacer(Modifier.height(8.dp))
                 CastFlow(item.cast)
             }
 
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(Dimens.sectionGap))
             InfoSections(item)
 
             if (item.canDelete) {
@@ -261,10 +273,10 @@ private fun HeroHeader(item: MediaItemDto, poster: ImageSource) {
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0x99000000),
-                        0.35f to Color(0x33000000),
+                        0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.60f),
+                        0.35f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.20f),
                         0.62f to Color.Transparent,
-                        1f to Color(0xE6000000),
+                        1f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.90f),
                     )
                 )
         )
@@ -272,22 +284,22 @@ private fun HeroHeader(item: MediaItemDto, poster: ImageSource) {
             Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = Dimens.pagePadding, vertical = 14.dp),
         ) {
             item.seriesName?.takeIf { it.isNotBlank() && it != item.title }?.let { series ->
-                Text(series, style = MonoLabelStyle, color = Color(0xCCFFFFFF), maxLines = 1)
+                Text(series, style = MonoLabelStyle, color = PlayerTokens.onMediaSecondary, maxLines = 1)
                 Spacer(Modifier.height(4.dp))
             }
             Text(
                 item.title,
                 style = MaterialTheme.typography.displaySmall,
-                color = Color.White,
+                color = PlayerTokens.onMedia,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             item.metaLine()?.let { meta ->
                 Spacer(Modifier.height(6.dp))
-                Text(meta, style = MonoLabelStyle, color = Color(0xD9FFFFFF), maxLines = 1)
+                Text(meta, style = MonoLabelStyle, color = PlayerTokens.onMediaSecondary, maxLines = 1)
             }
         }
     }
@@ -307,9 +319,9 @@ private fun MediaItemDto.metaLine(): String? {
 private fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(AppRadius.pill.dp))
-            .background(Color(0x66000000))
+            .size(Dimens.iconButton)
+            .clip(AppShape.control)
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f))
             .clickable(onClick = onBack),
         contentAlignment = Alignment.Center,
     ) {
@@ -378,7 +390,7 @@ private fun EpisodeRow(episode: MediaItemDto, thumb: ImageSource, onClick: () ->
             Modifier
                 .width(112.dp)
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(AppShape.control)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             val request = rememberImageRequest(thumb)
@@ -483,7 +495,7 @@ private fun AvatarBox(person: CastMember, source: ImageSource) {
     Box(
         Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(AppRadius.pill.dp))
+            .clip(AppShape.circle)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
@@ -518,9 +530,9 @@ private fun CastFlow(cast: List<String>) {
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(AppRadius.pill.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .clip(AppShape.control)
+                    .background(LocalAppColors.current.surface2)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
             )
         }
     }
@@ -574,12 +586,12 @@ private fun InfoSections(item: MediaItemDto) {
 
 @Composable
 private fun LabelValueRow(label: String, value: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Text(
             label,
             style = MaterialTheme.typography.labelMedium,
             color = LocalAppColors.current.text3,
-            modifier = Modifier.width(76.dp),
+            modifier = Modifier.width(72.dp),
         )
         Text(
             value,
@@ -600,7 +612,7 @@ private fun DangerTextButton(text: String, onClick: () -> Unit) {
         textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(AppRadius.button.dp))
+            .clip(AppShape.control)
             .clickable(onClick = onClick)
             .padding(vertical = 12.dp),
     )

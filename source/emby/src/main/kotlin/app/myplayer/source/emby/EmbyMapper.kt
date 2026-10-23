@@ -50,6 +50,7 @@ class EmbyMapper(private val serverId: String) {
             canDelete = dto.canDelete,
             libraryId = libraryId,
             hasPoster = dto.imageTags?.containsKey("Primary") == true,
+            imageTags = dto.imageTags?.keys.orEmpty(),
         )
     }
 }

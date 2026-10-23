@@ -39,6 +39,7 @@ class SettingsStoreTest {
         val s = InMemorySettingsStore().settings.first()
         assertThat(s.screenOrientation).isEqualTo(ScreenOrientation.AUTO)
         assertThat(s.defaultAspectRatio).isEqualTo(AspectRatio.FIT)
-        assertThat(s.subtitleStyle.fontScale).isEqualTo(1.0f)
+        assertThat(s.subtitleStyle.fontSizeSp).isEqualTo(20f)
+        assertThat(s.subtitleStyle.verticalPosition).isEqualTo(0.9f)
     }
 }

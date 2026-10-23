@@ -7,6 +7,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.net.InetSocketAddress
+import java.net.Socket
 
 /**
  * 探测服务器：Emby / Jellyfin 走公开端点 `/System/Info/Public`，不带令牌。
@@ -20,6 +22,24 @@ suspend fun probeServer(client: OkHttpClient, baseUrl: String, port: String): Pr
     ProbeStatus.NotFound
 } catch (e: Exception) {
     ProbeStatus.Unreachable(e.message ?: e::class.java.simpleName)
+}
+
+/**
+ * 探测 SMB：源模块还没接入，但**端口连通性是真的能测的** ——
+ * 对 `host:445` 做一次 TCP 握手，能通说明地址 / 端口 / 防火墙都没问题。
+ *
+ * 不做 SMB 协议协商（那需要 SMB2 客户端），所以只回复「可达」，不报版本。
+ */
+suspend fun probeSmb(baseUrl: String): ProbeStatus = withContext(Dispatchers.IO) {
+    val parsed = parseServerUrl(baseUrl)
+    val host = parsed.host.ifBlank { return@withContext ProbeStatus.Unreachable("请填写服务器地址") }
+    val port = parsed.port?.toIntOrNull() ?: 445
+    try {
+        Socket().use { socket -> socket.connect(InetSocketAddress(host, port), 3000) }
+        ProbeStatus.Reachable(serverName = "$host:$port", productName = "SMB", version = null)
+    } catch (e: Exception) {
+        ProbeStatus.Unreachable("TCP $port 连不上：${e.message ?: e::class.java.simpleName}")
+    }
 }
 
 /**

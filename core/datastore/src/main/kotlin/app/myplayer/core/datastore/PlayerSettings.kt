@@ -10,11 +10,16 @@ enum class AspectRatio { FIT, FILL, CROP, ORIGINAL }
 
 @Serializable
 data class SubtitleStyle(
-    val fontScale: Float = 1.0f,
+    /** 字号，单位 sp（字幕设置页范围 12–32）。 */
+    val fontSizeSp: Float = 20f,
+    /** 字幕填充色（ARGB）。 */
     val textColorArgb: Int = 0xFFFFFFFF.toInt(),
+    /** 描边色（ARGB）。 */
     val outlineColorArgb: Int = 0xFF000000.toInt(),
+    /** 描边粗细，单位 dp（0 = 不描边）。 */
     val outlineWidthDp: Float = 2f,
-    val bottomPaddingDp: Float = 16f,
+    /** 字幕在画面中的垂直位置：0.1 = 靠上，0.9 = 靠下。 */
+    val verticalPosition: Float = 0.9f,
 )
 
 /** 与功能说明的设置项清单一一对应；分组顺序和设置页一致，便于 P5 直接渲染。 */

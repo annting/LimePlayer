@@ -285,7 +285,11 @@ class PlayerViewModel(
 
     fun beginScrub() {
         if (_ui.value.locked) return
-        _ui.update { it.copy(scrubbing = true, scrubPositionMs = it.positionMs) }
+        // controlsVisible = true：手指在画面上横向拖动时，用户必须看得到进度条，
+        // 否则（没有 trickplay 预览的片源）整个拖动过程没有任何反馈。
+        _ui.update {
+            it.copy(scrubbing = true, scrubPositionMs = it.positionMs, controlsVisible = true)
+        }
         autoHideJob?.cancel()   // 拖动期间不自动隐藏
     }
 

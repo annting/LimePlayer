@@ -48,4 +48,21 @@ class PlayerUtilsTest {
         assertThat(seekHintText(-10_000)).isEqualTo("-10 秒")
         assertThat(seekHintText(30_000)).isEqualTo("+30 秒")
     }
+
+    @Test
+    fun `横向拖动换算进度增量：右滑前进、左滑后退`() {
+        // 扫过整屏宽 = SEEK_FULL_WIDTH_MS
+        assertThat(seekDeltaMs(dragPx = 1080f, widthPx = 1080f))
+            .isEqualTo(SEEK_FULL_WIDTH_MS.toLong())
+        // 半屏 = 一半
+        assertThat(seekDeltaMs(dragPx = 540f, widthPx = 1080f))
+            .isEqualTo((SEEK_FULL_WIDTH_MS / 2).toLong())
+        // 左滑为负（后退）
+        assertThat(seekDeltaMs(dragPx = -540f, widthPx = 1080f))
+            .isEqualTo(-(SEEK_FULL_WIDTH_MS / 2).toLong())
+        // 没动 = 0
+        assertThat(seekDeltaMs(dragPx = 0f, widthPx = 1080f)).isEqualTo(0L)
+        // 宽度异常（首帧还没量到）不能除零
+        assertThat(seekDeltaMs(dragPx = 100f, widthPx = 0f)).isEqualTo(0L)
+    }
 }

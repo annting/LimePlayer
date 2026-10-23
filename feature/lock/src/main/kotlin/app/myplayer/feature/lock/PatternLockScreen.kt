@@ -42,7 +42,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.LocalAppColors
+import app.myplayer.core.designsystem.Spacing
 import kotlin.math.roundToInt
 
 /** UI 测试定位用：Canvas 本身不含语义，需要 testTag 才能被测试框架找到。 */
@@ -63,7 +65,7 @@ fun PatternLockScreen(
 ) {
     val density = LocalDensity.current
     val hitRadiusPx = with(density) { 24.dp.toPx() }
-    val dotRadiusPx = with(density) { 7.dp.toPx() }
+    val dotRadiusPx = with(density) { 8.dp.toPx() }
 
     val scheme = MaterialTheme.colorScheme
     val app = LocalAppColors.current
@@ -132,9 +134,9 @@ fun PatternLockScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             LockMark()
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(Spacing.xl.dp))
             Text("绘制解锁图案", style = MaterialTheme.typography.titleLarge, color = scheme.onSurface)
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(Spacing.sm.dp))
             val hint = state.message ?: "连接至少 4 个点"
             Text(
                 hint,
@@ -145,7 +147,7 @@ fun PatternLockScreen(
                 },
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.height(26.dp))
+            Spacer(Modifier.height(Spacing.xl.dp))
 
             // ---- 九宫格画布：宽度自适应（0.74 屏宽，上限 320dp），命中与绘制同源 ----
             var sidePx by remember { mutableStateOf(0f) }
@@ -208,7 +210,7 @@ fun PatternLockScreen(
                 }
             }
 
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(Spacing.xl.dp))
             Text(
                 "轻点或按住拖动均可",
                 style = MaterialTheme.typography.labelSmall,
@@ -226,7 +228,7 @@ private fun LockMark() {
     Box(
         modifier = Modifier
             .size(58.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(AppShape.card)
             .drawBehind {
                 drawRect(
                     brush = Brush.linearGradient(

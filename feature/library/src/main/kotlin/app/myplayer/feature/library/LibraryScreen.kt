@@ -33,6 +33,10 @@ import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import app.myplayer.core.designsystem.LocalAppColors
+import app.myplayer.core.designsystem.LocalBottomNavSpace
+import app.myplayer.core.designsystem.AppShape
+import app.myplayer.core.designsystem.PlayerTokens
+import app.myplayer.core.designsystem.RatingGold
 import app.myplayer.core.designsystem.MonoLabelStyle
 import app.myplayer.core.designsystem.components.AppChip
 import app.myplayer.core.designsystem.components.EmptyState
@@ -125,7 +129,13 @@ fun LibraryScreen(
 
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 132.dp),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 24.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 0.dp,
+                    // 悬浮导航高度（含手势条 + 呼吸）：见 `LocalBottomNavSpace` 注释
+                    bottom = LocalBottomNavSpace.current,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
@@ -196,7 +206,7 @@ internal fun PosterCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(14.dp))
+                .clip(AppShape.control)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             if (request != null) {
@@ -224,7 +234,7 @@ internal fun PosterCard(
                         Brush.verticalGradient(
                             0f to Color.Transparent,
                             0.58f to Color.Transparent,
-                            1f to Color(0xB8000000),
+                            1f to PlayerTokens.controlScrim,
                         )
                     )
             )
@@ -234,19 +244,19 @@ internal fun PosterCard(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .size(48.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Color(0x8C000000))
+                    .clip(AppShape.circle)
+                    .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.55f))
                     .clickable(onClick = { onPlay(item) })
                     .semantics { contentDescription = "播放 ${item.title}" },
                 contentAlignment = Alignment.Center,
             ) {
-                PlayIcon(tint = Color.White)
+                PlayIcon(tint = PlayerTokens.onMedia)
             }
             item.communityRating?.takeIf { it > 0f }?.let { rating ->
                 Text(
                     String.format(java.util.Locale.US, "%.1f", rating),
                     modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp),
-                    color = Color(0xFFF5C869),
+                    color = RatingGold,
                     style = MonoLabelStyle,
                 )
             }
@@ -283,7 +293,7 @@ private fun SkeletonGrid() {
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            repeat(4) { ShimmerBox(Modifier.width(72.dp).height(34.dp), cornerRadius = 999.dp) }
+            repeat(4) { ShimmerBox(Modifier.width(72.dp).height(34.dp), cornerRadius = 8.dp) }
         }
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),

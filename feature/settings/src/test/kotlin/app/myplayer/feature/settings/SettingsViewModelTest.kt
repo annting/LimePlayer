@@ -73,12 +73,12 @@ class SettingsViewModelTest {
         vm.setThemeMode(ThemeMode.DARK)
         vm.setAutoPlayNext(false)
         vm.setDoubleTapSeekMillis(30_000L)
-        vm.setSubtitleStyle { it.copy(fontScale = 1.8f) }
+        vm.setSubtitleStyle { it.copy(fontSizeSp = 26f) }
 
         val st: PlayerSettings = settings.settings.first()
         assertThat(st.themeMode).isEqualTo(ThemeMode.DARK)
         assertThat(st.autoPlayNext).isFalse()
         assertThat(st.doubleTapSeekMillis).isEqualTo(30_000L)
-        assertThat(st.subtitleStyle.fontScale).isEqualTo(1.8f)
+        assertThat(st.subtitleStyle.fontSizeSp).isEqualTo(26f)
     }
 }

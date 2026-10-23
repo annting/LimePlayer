@@ -39,6 +39,9 @@ fun PlayerRoute(
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     keepBackgroundPlayback: Boolean = false,
     autoPlayNext: Boolean = true,
+    defaultOrientation: PlayerOrientation = PlayerOrientation.AUTO,
+    inPictureInPicture: Boolean = false,
+    onLandscapeChange: (landscape: Boolean, fakeRotation: Boolean) -> Unit = { _, _ -> },
 ) {
     val vm: PlayerViewModel = viewModel(
         factory = viewModelFactory {
@@ -112,6 +115,9 @@ fun PlayerRoute(
             onBack = leave,
             appUnlocked = appUnlocked,
             keepBackgroundPlayback = keepBackgroundPlayback,
+            defaultOrientation = defaultOrientation,
+            inPictureInPicture = inPictureInPicture,
+            onLandscapeChange = onLandscapeChange,
         )
     }
 }

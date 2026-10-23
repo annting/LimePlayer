@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,7 +43,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.myplayer.core.designsystem.AppRadius
+import app.myplayer.core.designsystem.AppShape
+import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
+import app.myplayer.core.designsystem.Spacing
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.EmptyState
 import app.myplayer.core.model.CastMember
@@ -144,10 +150,16 @@ fun PersonScreen(
                     columns = GridCells.Fixed(3),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 16.dp, bottom = 28.dp,
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 16.dp,
+                        // 28dp 呼吸留白 + 手势条：MainActivity 不再统一避让底部
+                        // （首页悬浮导航要透底），演员页要自己让出来
+                        bottom = 28.dp +
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
                     ),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.itemGap),
                 ) {
                     items(state.works, key = { it.id }) { work ->
                         WorkCard(work, rememberItemImage(work, ImageKind.POSTER, loadImage), onItemClick)
@@ -160,9 +172,9 @@ fun PersonScreen(
             Modifier
                 .align(Alignment.TopStart)
                 .padding(12.dp)
-                .size(40.dp)
-                .clip(RoundedCornerShape(AppRadius.pill.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .size(Dimens.iconButton)
+                .clip(AppShape.control)
+                .background(LocalAppColors.current.surface2)
                 .clickable(onClick = onBack),
             contentAlignment = Alignment.Center,
         ) {
@@ -177,14 +189,14 @@ private fun PersonHeader(name: String, avatar: ImageSource) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 18.dp),
+            .padding(horizontal = Dimens.pagePadding, vertical = Spacing.lg.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val request = rememberImageRequest(avatar)
         Box(
             Modifier
                 .size(80.dp)
-                .clip(RoundedCornerShape(AppRadius.pill.dp))
+                .clip(AppShape.circle)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {

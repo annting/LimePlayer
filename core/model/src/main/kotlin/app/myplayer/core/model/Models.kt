@@ -76,6 +76,14 @@ data class MediaItemDto(
     val userData: UserData = UserData(),
     /** 是否有可用海报；false 时 `image()` **必须**返回 [ImageSource.None]，UI 走占位而不是请求一个必然 404 的 URL。 */
     val hasPoster: Boolean = false,
+    /**
+     * 服务端下发的可用图片类型（Emby `ImageTags` 的键：`Primary` / `Thumb` / `Backdrop` / `Logo`）。
+     *
+     * 首页 16:9 卡片据此挑「Thumb → Primary → Backdrop」—— 剧集的 Primary 本身就是 16:9 截图，
+     * 而电影往往只有 Primary（2:3）+ Backdrop、没有 Thumb；不判断就会请求一个必然 404 的图。
+     * **列表同步携带、不入库**；为空表示未知（老缓存），`image()` 退回按 kind 直取的旧行为。
+     */
+    val imageTags: Set<String> = emptySet(),
     val genres: List<String> = emptyList(),
     /** 演职员姓名（**入库**，列表同步携带）。结构化版本见 [people]。 */
     val cast: List<String> = emptyList(),
