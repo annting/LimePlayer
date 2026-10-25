@@ -38,7 +38,17 @@ fun PlayerRoute(
     onBack: () -> Unit,
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     keepBackgroundPlayback: Boolean = false,
+    /** 应用锁开关（设置 → 隐私）：只决定「解锁回前台要不要自动续播」。 */
+    appLockEnabled: Boolean = false,
     autoPlayNext: Boolean = true,
+    /** 设置页「播放 · 默认倍速」：起播时的初始播放速度。 */
+    defaultSpeed: Float = 1f,
+    /** 设置页「播放 · 双击快进」：双击画面左右两侧的跳转时长（ms）。 */
+    doubleTapSeekMs: Long = DOUBLE_TAP_SEEK_MS,
+    /** 设置页「画面 · 画面比例」：起播时的初始缩放模式。 */
+    initialScaleMode: ScaleMode = ScaleMode.FIT,
+    /** 设置页「字幕设置」：字号 / 颜色 / 描边 / 位置。 */
+    subtitleStyle: PlayerSubtitleStyle = PlayerSubtitleStyle(),
     defaultOrientation: PlayerOrientation = PlayerOrientation.AUTO,
     inPictureInPicture: Boolean = false,
     onLandscapeChange: (landscape: Boolean, fakeRotation: Boolean) -> Unit = { _, _ -> },
@@ -51,7 +61,14 @@ fun PlayerRoute(
         },
     )
     LaunchedEffect(itemId, source) {
-        vm.start(itemId, source, caps, autoPlayNext)
+        vm.start(
+            itemId = itemId,
+            source = source,
+            caps = caps,
+            autoPlayNext = autoPlayNext,
+            defaultSpeed = defaultSpeed,
+            initialScaleMode = initialScaleMode,
+        )
     }
     // 播完且无下一集 → 回列表（`03` §5.7）
     val ui by vm.ui.collectAsStateWithLifecycle()
@@ -115,6 +132,9 @@ fun PlayerRoute(
             onBack = leave,
             appUnlocked = appUnlocked,
             keepBackgroundPlayback = keepBackgroundPlayback,
+            appLockEnabled = appLockEnabled,
+            doubleTapSeekMs = doubleTapSeekMs,
+            subtitleStyle = subtitleStyle,
             defaultOrientation = defaultOrientation,
             inPictureInPicture = inPictureInPicture,
             onLandscapeChange = onLandscapeChange,

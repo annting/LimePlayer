@@ -40,7 +40,8 @@ interface SettingsStore {
     suspend fun setLocalThumbnails(v: Boolean) = update { it.copy(localThumbnails = v) }
     suspend fun setSearchFuzzyPinyin(v: Boolean) = update { it.copy(searchFuzzyPinyin = v) }
     suspend fun setSearchTraditionalSimplified(v: Boolean) = update { it.copy(searchTraditionalSimplified = v) }
-    suspend fun setLibraryDisplayMode(v: LibraryDisplayMode) = update { it.copy(libraryDisplayMode = v) }
+    suspend fun setEmbyHomeSettings(v: HomeModuleSettings) = update { it.copy(embyHomeSettings = v) }
+    suspend fun setSmbHomeSettings(v: HomeModuleSettings) = update { it.copy(smbHomeSettings = v) }
     suspend fun setActiveServerId(v: String?) = update { it.copy(activeServerId = v) }
 }
 

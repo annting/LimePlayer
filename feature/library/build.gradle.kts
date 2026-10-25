@@ -27,15 +27,22 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
     implementation(project(":core:designsystem"))
+    // 首页设置与设置页共用同一份 DataStore（HomeSettingsRepository 读 PlayerSettings 里的两份首页规则）
+    implementation(project(":core:datastore"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
+    // 搜索页历史清空 / 折叠图标（Icons.Outlined.Delete、KeyboardArrowDown/Up）
+    implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // 多选态按系统返回要「退出多选」而不是退出页面（BackHandler）；
+    // feature:player 同款依赖（Compose 的 BackHandler 在 activity-compose 里）
+    implementation(libs.androidx.activity.compose)
 
     debugImplementation(libs.compose.ui.tooling)
 

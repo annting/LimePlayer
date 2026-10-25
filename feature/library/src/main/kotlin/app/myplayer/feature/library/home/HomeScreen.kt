@@ -20,16 +20,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -46,21 +47,23 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import app.myplayer.feature.library.R
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import coil3.compose.AsyncImage
-import coil3.network.NetworkHeaders
-import coil3.network.httpHeaders
-import coil3.request.ImageRequest
-import coil3.request.crossfade
+import androidx.compose.ui.unit.sp
 import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
@@ -78,26 +81,39 @@ import app.myplayer.core.designsystem.components.ShimmerBox
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
+import coil3.compose.AsyncImage
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 
 /**
- * 首页（`docs/03` §6.0）。
+ * 首页（`docs/03` §6.0）—— **单 LazyColumn + 全 16:9 横滑卡片**（2026-10-24 重构）。
  *
- * ## 结构：**整页只有一个 LazyVerticalGrid**
- * 「继续观看」「各库横滑」都是 `item(span = { GridItemSpan(maxLineSpan) })` 占满整行，
- * 「最近添加」直接 `items(...)` 走默认 3 列 —— 没有外层 LazyColumn / 内层竖向滚动，
- * 所以不存在嵌套滑动冲突（横向 LazyRow 与竖向网格正交，天然不打架）。
+ * ## 结构
+ * ```
+ * LazyColumn                      ← 整页唯一竖向滚动容器
+ *   ├─ 继续观看        Row(16:9 卡片 · 播放键 · 进度条)
+ *   ├─ 我的媒体库      Row(16:9 卡片 · 库名 + 影片数)          ← 新增模块
+ *   ├─ 电影 / 电视剧 … Row(16:9 卡片 · 标题)   ← 由服务器库列表动态生成，带「查看全部 >」
+ *   └─ 最近添加        Row(16:9 卡片 · 标题)
+ * ```
+ * 所有横滑行都是同一个组件 [StandardHorizontalCard]，差异全靠参数（进度条 / 播放键 / 副标题）。
+ *
+ * ## 为什么从网格改成列表
+ * 竖屏海报网格和 16:9 横卡混排时，视觉重心会跳（一行矮一行高）；统一宽高比之后
+ * 每块的节奏一致，且「最近添加」不再换行成 3 列，横向滑动的信息密度更高。
  *
  * ## 横向边界回弹
- * 每个 LazyRow 都挂 [bounceOverscroll]，滑到头松手会按 spring 阻尼弹回，
- * 实现与取舍见 `BounceOverscroll.kt` 的类注释。
+ * 每行都挂 [bounceOverscroll]（`BounceOverscroll.kt`），滑到头松手按 spring 阻尼弹回。
  *
  * ## 状态机（全部由 [HomeUiState] 推导，页面里不存业务状态）
  * ```
- * isLoading            → 骨架屏（2-3 个横滑占位 + 6 个竖屏占位）
- * hasNoServer          → 空态 1：去添加服务器
- * error != null        → 空态 2：无法连接到服务器 + 重试
- * !hasContent          → 兜底空态：服务器里还没有内容
- * 其它                 → PullToRefreshBox { 网格 }
+ * isLoading       → 骨架屏（各模块同尺寸 16:9 占位卡）
+ * hasNoServer     → 空态 1：去添加服务器
+ * error != null   → 空态 2：无法连接到服务器 + 重试
+ * !hasContent     → 兜底空态：服务器里还没有内容
+ * 其它            → PullToRefreshBox { LazyColumn }
  * ```
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -111,7 +127,13 @@ fun HomeScreen(
     onAddServer: () -> Unit,
     onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
-    onSeeAllLibrary: (HomeLibrarySection) -> Unit,
+    /**
+     * 打开某个媒体库的详情页（「我的媒体库」卡片 / 各分类的「查看全部」都走这里）。
+     * [smb] = 该库是 SMB 文件夹（详情页按视频文件渲染而不是海报）。
+     */
+    onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
+    /** 「首页内容已隐藏」空态的按钮：跳到设置 → 首页设置。 */
+    onGoToHomeSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize()) {
@@ -142,9 +164,17 @@ fun HomeScreen(
                     iconContent = { OfflineIcon(tint = MaterialTheme.colorScheme.primary) },
                 )
 
+                // 首页设置把 4 个模块全关了：与其渲染一片空白，不如告诉用户去哪打开
+                state.allModulesHidden -> EmptyHomeState(onGoToHomeSettings = onGoToHomeSettings)
+
                 !state.hasContent -> HomeFullState(
-                    title = "这里还没有内容",
-                    description = "服务器上还没有可展示的影片，添加片源后再下拉刷新。",
+                    title = if (state.onlyRecentlyAdded) "最近添加里没有影片" else "这里还没有内容",
+                    description = if (state.onlyRecentlyAdded) {
+                        "最近 ${state.settings.recentlyAddedDays} 天没有新入库的影片。" +
+                            "可以到「首页设置」放宽天数，或下拉刷新。"
+                    } else {
+                        "服务器上还没有可展示的影片，添加片源后再下拉刷新。"
+                    },
                     actionText = "刷新",
                     onAction = onRefresh,
                     iconContent = { ServerIcon(tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp)) },
@@ -160,7 +190,7 @@ fun HomeScreen(
                         loadImage = loadImage,
                         onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
-                        onSeeAllLibrary = onSeeAllLibrary,
+                        onOpenLibrary = onOpenLibrary,
                     )
                 }
             }
@@ -265,7 +295,7 @@ private fun HomeTopBar(
     }
 }
 
-// ---- 内容区（单网格） ----
+// ---- 内容区（单 LazyColumn） ----
 
 @Composable
 private fun HomeContent(
@@ -273,29 +303,22 @@ private fun HomeContent(
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
-    onSeeAllLibrary: (HomeLibrarySection) -> Unit,
+    onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+    LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        // 左右 16dp 只作用于「海报列」；横滑行靠 Modifier.horizontalBleed 突破到屏幕边缘。
-        // 底部 = 悬浮导航占掉的高度（含手势条）+ 页面呼吸留白：视口铺到屏幕底，
-        // 只让最后一行停在胶囊上方，滚动时内容从半透明胶囊底下穿过。
+        // 底部 = 悬浮导航占掉的高度（含手势条）+ 呼吸留白：
+        // 视口铺到屏幕底，最后一行停在胶囊上方，滚动时内容从半透明胶囊底下穿过。
         contentPadding = PaddingValues(
-            start = Dimens.pagePadding,
-            end = Dimens.pagePadding,
             top = Spacing.xs.dp,
-            // 底部留白直接用 LocalBottomNavSpace（已含胶囊顶边 + 4dp 呼吸），不再自己叠
             bottom = LocalBottomNavSpace.current,
         ),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
-        verticalArrangement = Arrangement.spacedBy(Spacing.lg.dp),
+        verticalArrangement = Arrangement.spacedBy(Dimens.sectionGap),
     ) {
-        if (state.continueWatchingList.isNotEmpty()) {
-            item(key = "continue-watching", span = { GridItemSpan(maxLineSpan) }, contentType = "row") {
-                Column {
-                    SectionHeader("继续观看")
-                    Spacer(Modifier.height(10.dp))
+        // 模块显隐 = **设置开关 AND 数据非空**（首页设置页实时生效，见 HomeViewModel 的 combine）
+        if (state.settings.showContinueWatching && state.continueWatchingList.isNotEmpty()) {
+            item(key = "continue-watching", contentType = "section") {
+                HomeSection(title = "继续观看") {
                     ContinueWatchingRow(
                         items = state.continueWatchingList,
                         loadImage = loadImage,
@@ -306,104 +329,161 @@ private fun HomeContent(
             }
         }
 
-        state.libraries.forEach { library ->
-            item(key = "library-${library.id}", span = { GridItemSpan(maxLineSpan) }, contentType = "row") {
-                LibrarySection(
-                    section = library,
-                    loadImage = loadImage,
-                    onOpenDetail = onOpenDetail,
-                    onSeeAll = { onSeeAllLibrary(library) },
-                )
+        if (state.settings.showLibraryEntries && state.myLibrariesOrFolders.isNotEmpty()) {
+            item(key = "my-libraries", contentType = "section") {
+                val smb = state.sourceType == HomeSourceType.SMB
+                HomeSection(title = if (smb) "我的文件夹" else "我的媒体库") {
+                    MyLibrariesRow(
+                        libraries = state.myLibrariesOrFolders,
+                        folderMode = smb,
+                        loadImage = loadImage,
+                        onOpenLibrary = onOpenLibrary,
+                    )
+                }
             }
         }
 
-        if (state.recentlyAddedList.isNotEmpty()) {
-            item(key = "recently-added-title", span = { GridItemSpan(maxLineSpan) }, contentType = "title") {
-                SectionHeader("最近添加")
+        if (state.settings.showDynamicSections) state.dynamicSections.forEach { library ->
+            item(key = "library-${library.id}", contentType = "section") {
+                HomeSection(
+                    title = library.name,
+                    onSeeAll = { onOpenLibrary(library.id, library.name, state.sourceType == HomeSourceType.SMB) },
+                ) {
+                    LibraryItemsRow(
+                        items = library.items,
+                        loadImage = loadImage,
+                        onOpenDetail = onOpenDetail,
+                    )
+                }
             }
-            gridItems(
-                items = state.recentlyAddedList,
-                key = { "recent-${it.id}" },
-                contentType = { "poster" },
-            ) { item ->
-                RecentlyAddedPosterCard(
-                    item = item,
-                    loadImage = loadImage,
-                    onClick = { onOpenDetail(item) },
-                )
+        }
+
+        if (state.settings.showRecentlyAdded && state.recentlyAddedList.isNotEmpty()) {
+            item(key = "recently-added", contentType = "section") {
+                HomeSection(title = "最近添加") {
+                    RecentlyAddedRow(
+                        items = state.recentlyAddedList,
+                        loadImage = loadImage,
+                        onOpenDetail = onOpenDetail,
+                    )
+                }
             }
         }
     }
 }
 
-/** 区块标题（17sp / titleLarge）。 */
+/** 一个模块：标题行（可选「查看全部 >」）+ 一行横滑。 */
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-}
-
-// ---- 模块一：继续观看 ----
-
-/** 继续观看横滑行：240dp 16:9 卡片 + 边界回弹。 */
-@Composable
-private fun ContinueWatchingRow(
-    items: List<MediaItemDto>,
-    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
-    onPlay: (MediaItemDto) -> Unit,
-    onOpenDetail: (MediaItemDto) -> Unit,
+private fun HomeSection(
+    title: String,
+    onSeeAll: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
 ) {
-    val bounce = rememberBounceOverscrollState()
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalBleed(Dimens.pagePadding)
-            .bounceOverscroll(bounce),
-        contentPadding = PaddingValues(horizontal = Dimens.pagePadding),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
-    ) {
-        items(items = items, key = { it.id }) { item ->
-            ContinueWatchingCard(
-                item = item,
-                loadImage = loadImage,
-                onClick = { onOpenDetail(item) },
-                onPlay = { onPlay(item) },
+    val app = LocalAppColors.current
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = Dimens.pagePadding),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (onSeeAll != null) {
+                Row(
+                    modifier = Modifier
+                        .clip(AppShape.control)
+                        .clickable(onClick = onSeeAll)
+                        .padding(horizontal = Spacing.xs.dp, vertical = Spacing.xs.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "查看全部",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = app.text3,
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    ChevronRightIcon(tint = app.text3, modifier = Modifier.size(12.dp))
+                }
+            }
         }
+        Spacer(Modifier.height(10.dp))
+        content()
     }
 }
 
 /**
- * 继续观看卡片：16:9 / 宽 240dp / 圆角 12dp。
+ * 一行横滑（带边界回弹）。
  *
- * 结构（从下往上）：深灰底 + 截图 → 底部渐变遮罩 → 标题 + 剩余时间 → 中央半透明播放按钮
- * → 最底部 3dp 青柠色进度条。
+ * 整行铺满窗口宽度、只靠 `contentPadding` 让首尾卡片离边 16dp ——
+ * 这样卡片能滑到屏幕边缘之外，视觉上才是「无限滑」而不是「框在页面里」。
  */
 @Composable
-fun ContinueWatchingCard(
-    item: MediaItemDto,
-    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
+private fun BounceRow(content: LazyListScope.() -> Unit) {
+    val bounce = rememberBounceOverscrollState()
+    LazyRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .bounceOverscroll(bounce),
+        contentPadding = PaddingValues(horizontal = Dimens.pagePadding),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
+        content = content,
+    )
+}
+
+// ---- 通用 16:9 横卡 ----
+
+/**
+ * 首页所有模块共用的 16:9 横卡。
+ *
+ * 差异全部由参数表达，避免每个模块各写一套 Box + 渐变 + 文字：
+ * | 模块 | progress | onPlay | subtitle |
+ * |---|---|---|---|
+ * | 继续观看 | 0..1 | 有 | 「剩余 23 分钟」 |
+ * | 我的媒体库 | null | null | 「486 部影片」 |
+ * | 库分类 / 最近添加 | null | null | null |
+ *
+ * @param progress 非 null 时在**卡片内侧**画进度条（左右 12dp、底部 8dp 内缩）。
+ *   旧实现把进度条贴在卡片最底边，被 12dp 圆角切掉两头（用户报的 bug），内缩后完整显示。
+ */
+@Composable
+fun StandardHorizontalCard(
+    title: String,
+    image: ImageSource,
     onClick: () -> Unit,
-    onPlay: () -> Unit,
     modifier: Modifier = Modifier,
+    width: Dp = CardWidth,
+    subtitle: String? = null,
+    progress: Float? = null,
+    onPlay: (() -> Unit)? = null,
+    /** 非空时用「深灰底 + 居中图标」代替封面（SMB 文件夹卡）。 */
+    centeredIcon: (@Composable () -> Unit)? = null,
 ) {
     val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
-    val image = rememberHomeImage(item.id, ImageKind.THUMB) { loadImage(item, ImageKind.THUMB) }
-    val fraction = item.progressFraction()
 
     Box(
         modifier = modifier
-            .width(240.dp)
-            .aspectRatio(16f / 9f)
+            .width(width)
+            .aspectRatio(CardAspect)
             .clip(AppShape.card)
             .background(app.surface2)
             .clickable(onClick = onClick),
     ) {
-        HomeImage(source = image, title = item.title, modifier = Modifier.fillMaxSize())
+        if (centeredIcon != null) {
+            Box(
+                Modifier.fillMaxSize().background(app.surface2),
+                contentAlignment = Alignment.Center,
+            ) { centeredIcon() }
+        } else {
+            HomeImage(source = image, title = title, modifier = Modifier.fillMaxSize())
+        }
 
         // 底部渐变遮罩：保证叠字可读（越往下越实）
         Box(
@@ -418,55 +498,92 @@ fun ContinueWatchingCard(
         )
 
         // 中央播放按钮（点它直接播，点卡片其余区域进详情）
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .size(44.dp)
-                .clip(AppShape.circle)
-                .background(PlayerTokens.controlScrim)
-                .clickable(onClick = onPlay),
-            contentAlignment = Alignment.Center,
-        ) {
-            PlayIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(22.dp))
+        if (onPlay != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(44.dp)
+                    .clip(AppShape.circle)
+                    .background(PlayerTokens.controlScrim)
+                    .clickable(onClick = onPlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                PlayIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(22.dp))
+            }
         }
 
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(start = Spacing.md.dp, end = Spacing.md.dp, bottom = 11.dp),
+                .padding(
+                    start = Spacing.md.dp,
+                    end = Spacing.md.dp,
+                    // 有进度条时把文字抬到条子上方（8dp 底距 + 3dp 条 + 7dp 间隔）
+                    bottom = if (progress != null) 18.dp else Spacing.md.dp,
+                ),
         ) {
             Text(
-                text = item.continueTitle(),
+                text = title,
                 style = MaterialTheme.typography.titleSmall,
                 color = PlayerTokens.onMedia,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            item.remainingWatchText()?.let { remaining ->
+            subtitle?.let {
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = remaining,
+                    text = it,
                     style = MaterialTheme.typography.labelSmall,
                     color = PlayerTokens.onMediaSecondary,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
 
-        // 最底部 3dp 进度条：轨道用半透明白，已完成段用品牌青柠
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .height(3.dp)
-                .background(PlayerTokens.track),
-        ) {
+        if (progress != null) {
+            // 进度条：**内缩**在卡片里，不再贴边 —— 贴边会被 12dp 圆角裁掉两头
             Box(
                 Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(fraction)
-                    .background(scheme.primary)
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(PlayerTokens.track),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .background(scheme.primary)
+                )
+            }
+        }
+    }
+}
+
+// ---- 模块一：继续观看 ----
+
+@Composable
+private fun ContinueWatchingRow(
+    items: List<MediaItemDto>,
+    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
+    onPlay: (MediaItemDto) -> Unit,
+    onOpenDetail: (MediaItemDto) -> Unit,
+) {
+    BounceRow {
+        items(items = items, key = { it.id }) { item ->
+            StandardHorizontalCard(
+                title = item.continueTitle(),
+                subtitle = item.remainingWatchText(),
+                image = rememberHomeImage(item.id, ImageKind.THUMB) {
+                    loadImage(item, ImageKind.THUMB)
+                },
+                progress = item.progressFraction(),
+                onPlay = { onPlay(item) },
+                onClick = { onOpenDetail(item) },
             )
         }
     }
@@ -479,181 +596,127 @@ private fun MediaItemDto.continueTitle(): String {
     return "$series · 第 $ep 集"
 }
 
-// ---- 模块二：媒体库分类 ----
+// ---- 模块二：我的媒体库 ----
 
 /**
- * 一个媒体库分类：标题行（左名字 / 右「查看全部」）+ 16:9 横滑（无进度条）。
+ * 模块二：Emby = 库封面卡；SMB = 深灰底 + 文件夹图标。
  *
- * 分类是由服务器返回的库动态生成的，所以这个组件被 `forEach` 逐个塞进网格，
- * 库有几个就渲染几块，没有硬编码的「电影 / 电视剧」。
+ * 样式判据是 [folderMode] 或卡片自身的 [HomeLibraryCard.isFolder] —— 后者让「同一份数据
+ * 换个渲染」也能成立（例如将来 SMB 与网盘混排）。
  */
 @Composable
-fun LibrarySection(
-    section: HomeLibrarySection,
+private fun MyLibrariesRow(
+    libraries: List<HomeLibraryCard>,
+    folderMode: Boolean,
+    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
+    onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
+) {
+    val app = LocalAppColors.current
+    BounceRow {
+        items(items = libraries, key = { "mylib-${it.id}" }) { library ->
+            val asFolder = folderMode || library.isFolder
+            StandardHorizontalCard(
+                title = library.name,
+                subtitle = if (asFolder) {
+                    "${library.itemCount} 个视频"
+                } else {
+                    "${library.itemCount} 部影片"
+                },
+                image = if (asFolder) {
+                    ImageSource.None
+                } else {
+                    library.cover?.let { cover ->
+                        rememberHomeImage(cover.id, ImageKind.THUMB) {
+                            loadImage(cover, ImageKind.THUMB)
+                        }
+                    } ?: ImageSource.None
+                },
+                // 文件夹卡：深灰底 + 居中图标（不加载封面）
+                centeredIcon = if (asFolder) {
+                    { FolderIcon(tint = app.text3, modifier = Modifier.size(34.dp)) }
+                } else {
+                    null
+                },
+                onClick = { onOpenLibrary(library.id, library.name, folderMode || library.isFolder) },
+            )
+        }
+    }
+}
+
+// ---- 模块三：动态库分类 ----
+
+@Composable
+private fun LibraryItemsRow(
+    items: List<MediaItemDto>,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onOpenDetail: (MediaItemDto) -> Unit,
-    onSeeAll: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val app = LocalAppColors.current
-    val bounce = rememberBounceOverscrollState()
-
-    Column(modifier) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = section.name,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+    BounceRow {
+        items(items = items, key = { it.id }) { item ->
+            StandardHorizontalCard(
+                title = item.title,
+                image = rememberHomeImage(item.id, ImageKind.THUMB) {
+                    loadImage(item, ImageKind.THUMB)
+                },
+                onClick = { onOpenDetail(item) },
             )
-            Row(
-                modifier = Modifier
-                    .clip(AppShape.control)
-                    .clickable(onClick = onSeeAll)
-                    .padding(horizontal = Spacing.xs.dp, vertical = Spacing.xs.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "查看全部",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = app.text3,
-                )
-                Spacer(Modifier.width(2.dp))
-                ChevronRightIcon(tint = app.text3, modifier = Modifier.size(12.dp))
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalBleed(Dimens.pagePadding)
-                .bounceOverscroll(bounce),
-            contentPadding = PaddingValues(horizontal = Dimens.pagePadding),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
-        ) {
-            items(items = section.items, key = { it.id }) { item ->
-                LibraryCard(
-                    item = item,
-                    loadImage = loadImage,
-                    onClick = { onOpenDetail(item) },
-                )
-            }
         }
     }
 }
 
-/** 库分类卡片：16:9 / 宽 184dp / 圆角 8dp / 标题压在遮罩上（无进度条）。 */
+// ---- 模块四：最近添加 ----
+
 @Composable
-private fun LibraryCard(
-    item: MediaItemDto,
+private fun RecentlyAddedRow(
+    items: List<MediaItemDto>,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
-    onClick: () -> Unit,
+    onOpenDetail: (MediaItemDto) -> Unit,
 ) {
-    val app = LocalAppColors.current
-    val image = rememberHomeImage(item.id, ImageKind.THUMB) { loadImage(item, ImageKind.THUMB) }
-
-    Box(
-        modifier = Modifier
-            .width(184.dp)
-            .aspectRatio(16f / 9f)
-            .clip(AppShape.control)
-            .background(app.surface2)
-            .clickable(onClick = onClick),
-    ) {
-        HomeImage(source = image, title = item.title, modifier = Modifier.fillMaxSize())
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(0.4f to Color.Transparent, 1f to PlayerTokens.scrimBottom))
-        )
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.titleSmall,
-            color = PlayerTokens.onMedia,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.sm.dp, vertical = Spacing.sm.dp),
-        )
-    }
-}
-
-// ---- 模块三：最近添加（网格） ----
-
-/** 最近添加海报：2:3 / 圆角 8dp / Coil 加载 + 单行片名（12.5sp，省略号）。 */
-@Composable
-fun RecentlyAddedPosterCard(
-    item: MediaItemDto,
-    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val app = LocalAppColors.current
-    val image = rememberHomeImage(item.id, ImageKind.POSTER) { loadImage(item, ImageKind.POSTER) }
-
-    Column(modifier.clickable(onClick = onClick)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(AppShape.control)
-                .background(app.surface2),
-        ) {
-            HomeImage(source = image, title = item.title, modifier = Modifier.fillMaxSize())
+    BounceRow {
+        items(items = items, key = { "recent-${it.id}" }) { item ->
+            StandardHorizontalCard(
+                title = item.title,
+                image = rememberHomeImage(item.id, ImageKind.THUMB) {
+                    loadImage(item, ImageKind.THUMB)
+                },
+                onClick = { onOpenDetail(item) },
+            )
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = item.title,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
 // ---- 骨架屏 / 空态 ----
 
-/** 首屏骨架：标题条 + 3 个横滑占位（16:9）+ 2×3 竖屏占位。 */
+/** 首屏骨架：4 个模块 × （标题条 + 3 张 16:9 占位卡），尺寸与真卡片一致，数据到位不跳动。 */
 @Composable
 private fun HomeSkeleton() {
-    Column(Modifier.fillMaxSize().padding(top = Spacing.xs.dp)) {
-        ShimmerBox(
-            Modifier
-                .padding(start = Dimens.pagePadding)
-                .width(96.dp)
-                .height(20.dp),
-            cornerRadius = 4.dp,
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = Dimens.pagePadding),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
-        ) {
-            // 占位卡片与真实卡片同尺寸（240×135），数据到位时不跳动
-            repeat(3) { ShimmerBox(Modifier.width(240.dp).height(135.dp), cornerRadius = 12.dp) }
-        }
-        Spacer(Modifier.height(Spacing.xl.dp))
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = Dimens.pagePadding),
-            verticalArrangement = Arrangement.spacedBy(Spacing.lg.dp),
-        ) {
-            repeat(2) {
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp)) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(
+            top = Spacing.xs.dp,
+            bottom = LocalBottomNavSpace.current,
+        ),
+        verticalArrangement = Arrangement.spacedBy(Dimens.sectionGap),
+    ) {
+        items(count = 4) {
+            Column {
+                ShimmerBox(
+                    Modifier
+                        .padding(start = Dimens.pagePadding)
+                        .width(96.dp)
+                        .height(20.dp),
+                    cornerRadius = 4.dp,
+                )
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier.padding(start = Dimens.pagePadding),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
+                ) {
                     repeat(3) {
-                        Column(Modifier.weight(1f)) {
-                            ShimmerBox(Modifier.fillMaxWidth().aspectRatio(2f / 3f))
-                            Spacer(Modifier.height(6.dp))
-                            ShimmerBox(Modifier.fillMaxWidth(0.78f).height(12.dp), cornerRadius = 4.dp)
-                        }
+                        ShimmerBox(
+                            Modifier.width(CardWidth).height(CardWidth * 9f / 16f),
+                            cornerRadius = 12.dp,
+                        )
                     }
                 }
             }
@@ -678,6 +741,99 @@ private fun HomeFullState(
             onAction = onAction,
             iconContent = iconContent,
         )
+    }
+}
+
+/**
+ * 首页「全关」空态（2026-10-24 用户定稿）：首页设置把 4 个模块全关时替代空白页。
+ *
+ * 与其它三个空态（[HomeFullState] → 统一 `EmptyState`）**有意不同**：
+ * - 图标用 **App 桌面图标**（`ic_app_launcher`，合成好的完整 launcher 图标，自带青柠绿主色），76dp；
+ * - 整体在「去掉底部悬浮导航一半高度」后的剩余区域里居中 —— 几何居中会被
+ *   底部 105dp 的导航区压得视觉偏下，这里按半高补偿（问题一的根因）；
+ * - 主按钮走 Material 3 `Button`（青柠绿），与详情页筛选弹层的按钮同一款。
+ */
+@Composable
+private fun EmptyHomeState(
+    onGoToHomeSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val app = LocalAppColors.current
+    val scheme = MaterialTheme.colorScheme
+
+    // 再上移屏高的 5%（2026-10-24 用户二次微调）
+    val extraLift = LocalConfiguration.current.screenHeightDp.dp * 0.05f
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            // 视觉重心上移：底部悬浮导航占掉 ≈105dp，几何居中会显得偏下；
+            // 按「导航区半高」抬升内容（问题一，2026-10-24 用户反馈）
+            .padding(bottom = LocalBottomNavSpace.current / 2 + extraLift),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(horizontal = 32.dp),
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_app_launcher),
+                contentDescription = null,
+                modifier = Modifier.size(76.dp),
+            )
+            Text(
+                text = "首页内容已隐藏",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 20.dp),
+            )
+            Text(
+                text = "你已关闭了首页的所有展示模块",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
+                color = app.text3,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+            Button(
+                onClick = onGoToHomeSettings,
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = scheme.primary),
+                modifier = Modifier.padding(top = 24.dp).heightIn(min = 44.dp),
+            ) {
+                Text(text = "去设置开启", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/** 空态单独预览：直接看 Logo、文案与按钮（不经 VM）。 */
+@Preview(name = "首页 · 全关空态", showBackground = true, backgroundColor = 0xFF0B0D11, heightDp = 800)
+@Composable
+private fun EmptyHomeStatePreview() {
+    MyPlayerTheme(darkTheme = true) {
+        EmptyHomeState(onGoToHomeSettings = {})
+    }
+}
+
+/** 文件夹图标（自绘实心轮廓，SMB 文件夹卡专用）。 */
+@Composable
+private fun FolderIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            moveTo(w * 0.10f, h * 0.28f)
+            lineTo(w * 0.42f, h * 0.28f)
+            lineTo(w * 0.50f, h * 0.38f)
+            lineTo(w * 0.90f, h * 0.38f)
+            lineTo(w * 0.90f, h * 0.76f)
+            lineTo(w * 0.10f, h * 0.76f)
+            close()
+        }
+        drawPath(path, color = tint)
     }
 }
 
@@ -714,104 +870,51 @@ private fun OfflineIcon(tint: Color) {
 
 // ---- 图片 ----
 
-/**
- * `MediaSource.image()` 是 suspend，而 Coil 要现成的 model：
- * 先 `remember` 成 [ImageSource]，再转 [ImageRequest] —— 与库页 `PosterCard` 同一套写法，
- * key 用 item.id，列表复用不会串图。
- */
-@Composable
-private fun rememberHomeImage(
-    itemId: String,
-    kind: ImageKind,
-    load: suspend () -> ImageSource,
-): ImageSource {
-    var source by remember(itemId, kind) { mutableStateOf<ImageSource>(ImageSource.None) }
-    LaunchedEffect(itemId, kind) { source = load() }
-    return source
-}
+// ---- 尺寸 ----
 
-/**
- * 图片层：底层永远是「渐变占位 + 首字」，图片到了才盖上去。
- * 这样断网 / 无海报 / 加载中都不会出现白块或空洞。
- */
-@Composable
-private fun HomeImage(
-    source: ImageSource,
-    title: String,
-    modifier: Modifier = Modifier,
-) {
-    val app = LocalAppColors.current
-    val context = LocalContext.current
-    val request: ImageRequest? = remember(source, context) {
-        when (source) {
-            is ImageSource.Remote -> ImageRequest.Builder(context)
-                .data(source.url)
-                .httpHeaders( // 令牌走请求头，不进 URL / 缓存键
-                    NetworkHeaders.Builder().apply {
-                        source.headers.forEach { (k, v) -> set(k, v) }
-                    }.build()
-                )
-                .crossfade(true)
-                .build()
-            is ImageSource.Local -> ImageRequest.Builder(context)
-                .data(source.uri)
-                .crossfade(true)
-                .build()
-            ImageSource.None -> null
-        }
-    }
+/** 首页统一的 16:9 卡宽（改这一处即可整体缩放）。 */
+private val CardWidth = 240.dp
 
-    Box(
-        modifier = modifier.background(
-            Brush.linearGradient(listOf(app.surface2, app.surface3))
-        ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = title.take(1),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-        )
-        if (request != null) {
-            AsyncImage(
-                model = request,
-                contentDescription = title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-/** 横滑行突破父级 16dp 内边距：测量时多给两侧宽度，再整体左移，滚到边缘才真正贴屏幕边。 */
-private fun Modifier.horizontalBleed(bleed: Dp): Modifier = this.layout { measurable, constraints ->
-    if (!constraints.hasBoundedWidth) {
-        val placeable = measurable.measure(constraints)
-        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-    }
-    val px = bleed.roundToPx()
-    val widened: Constraints = constraints.copy(
-        minWidth = constraints.maxWidth + px * 2,
-        maxWidth = constraints.maxWidth + px * 2,
-    )
-    val placeable = measurable.measure(widened)
-    layout(constraints.maxWidth, placeable.height) { placeable.place(-px, 0) }
-}
+/** 16:9。 */
+private const val CardAspect = 16f / 9f
 
 // ---- @Preview ----
 
 private fun previewState(
     error: String? = null,
     noServer: Boolean = false,
-): HomeUiState = HomeUiState(
-    serverName = if (noServer) null else MockHomeData.EMBY_NAME,
-    servers = if (noServer) emptyList() else MockHomeData.servers,
-    selectedServerId = if (noServer) null else MockHomeData.EMBY_ID,
-    continueWatchingList = if (noServer) emptyList() else MockHomeData.continueWatching,
-    libraries = if (noServer) emptyList() else MockHomeData.libraries,
-    recentlyAddedList = if (noServer) emptyList() else MockHomeData.recentlyAdded,
-    error = error,
-)
+    smb: Boolean = false,
+): HomeUiState {
+    if (noServer) {
+        return HomeUiState(serverName = null, servers = emptyList(), error = error)
+    }
+    return if (smb) {
+        // SMB 形态：空文件夹（Downloads / Music）已经在 toFolderCards/toFolderSections 里被过滤
+        HomeUiState(
+            sourceType = HomeSourceType.SMB,
+            serverName = MockHomeData.SMB_NAME,
+            servers = MockHomeData.servers,
+            selectedServerId = MockHomeData.SMB_ID,
+            continueWatchingList = MockHomeData.smbContinueWatching,
+            myLibrariesOrFolders = MockHomeData.smbFolders.toFolderCards(),
+            dynamicSections = MockHomeData.smbFolders.toFolderSections(),
+            recentlyAddedList = MockHomeData.smbRecentlyAdded,
+            error = error,
+        )
+    } else {
+        HomeUiState(
+            sourceType = HomeSourceType.EMBY,
+            serverName = MockHomeData.EMBY_NAME,
+            servers = MockHomeData.servers,
+            selectedServerId = MockHomeData.EMBY_ID,
+            continueWatchingList = MockHomeData.continueWatching,
+            myLibrariesOrFolders = MockHomeData.libraryCards,
+            dynamicSections = MockHomeData.libraries,
+            recentlyAddedList = MockHomeData.recentlyAdded,
+            error = error,
+        )
+    }
+}
 
 @Composable
 private fun HomePreviewContent(state: HomeUiState, darkTheme: Boolean) {
@@ -827,7 +930,8 @@ private fun HomePreviewContent(state: HomeUiState, darkTheme: Boolean) {
                 onAddServer = {},
                 onPlay = {},
                 onOpenDetail = {},
-                onSeeAllLibrary = {},
+                onOpenLibrary = { _, _, _ -> },
+                onGoToHomeSettings = {},
             )
         }
     }
@@ -847,7 +951,7 @@ private fun HomeScreenLightPreview() {
     HomePreviewContent(state = previewState(), darkTheme = false)
 }
 
-/** 骨架屏。 */
+/** 骨架屏：所有模块都是 16:9 占位卡。 */
 @Preview(name = "首页 · 骨架屏", showBackground = true, backgroundColor = 0xFF0B0D11, heightDp = 900)
 @Composable
 private fun HomeSkeletonPreview() {
@@ -859,6 +963,13 @@ private fun HomeSkeletonPreview() {
 @Composable
 private fun HomeNoServerPreview() {
     HomePreviewContent(state = previewState(noServer = true), darkTheme = true)
+}
+
+/** SMB 形态：模块二叫「我的文件夹」，卡片是深灰底 + 文件夹图标，空文件夹已被过滤。 */
+@Preview(name = "首页 · SMB 模式", showBackground = true, backgroundColor = 0xFF0B0D11, heightDp = 900)
+@Composable
+private fun HomeScreenSmbPreview() {
+    HomePreviewContent(state = previewState(smb = true), darkTheme = true)
 }
 
 /** 空态 2：连不上服务器。 */

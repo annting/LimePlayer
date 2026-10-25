@@ -29,6 +29,15 @@ object AppShape {
     /** 12dp —— 底部弹层（只有上面两角）。 */
     val sheet = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
 
+    /**
+     * 20dp —— **模态确认弹窗**（`AppConfirmDialog`）。
+     *
+     * 全站唯一的「> 12dp」例外：弹窗是脱离页面的独立表面，20dp 让它与卡片区分开，
+     * 又不至于像 M3 默认的 28dp 那样圆得发飘（用户 2026-10-25 指定）。
+     * 仅限模态弹窗使用，卡片 / 列表 / 面板一律仍用 [card]。
+     */
+    val dialog = RoundedCornerShape(20.dp)
+
     /** 999dp —— 悬浮底部导航，全站唯一胶囊。 */
     val nav = RoundedCornerShape(999.dp)
 

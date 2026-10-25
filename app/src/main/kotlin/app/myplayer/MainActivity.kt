@@ -2,6 +2,7 @@ package app.myplayer
 
 import android.content.res.Configuration
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -143,6 +144,24 @@ class MainActivity : ComponentActivity() {
         // 解锁状态在 Activity 级（onUserLeaveHint 预锁需要），这里直接读写同一份状态
         val unlocked by unlockedState
 
+        // ── 隐私：遮挡任务快照（`02` §6.7）──
+        // FLAG_SECURE 一旦挂上，系统任务快照 / 最近任务缩略图 / 录屏、截图全部变黑，
+        // 这是 Android 上唯一「真的能挡住」的做法（改 contentDescription 之类都是假的）。
+        //
+        // 两个触发条件：
+        // 1. 用户在「设置 → 隐私」里主动打开「遮挡任务快照」；
+        // 2. 应用锁开着且当前处于锁定态 —— 否则锁屏（含图案轨迹）本身会被存进最近任务卡片，
+        //    等于把解锁凭证拍下来给旁边的人看。
+        val secureWindow = settings?.hideRecentsSnapshot == true ||
+            (settings?.appLockEnabled == true && !unlocked)
+        LaunchedEffect(secureWindow) {
+            if (secureWindow) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            } else {
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            }
+        }
+
         // 应用锁时序（`02` §6.7）：
         // · **离开瞬间预锁**（onUserLeaveHint，见 Activity 字段说明）—— 让任务快照就是锁屏，
         //   消除「回前台先闪一下视频再出现锁屏」。
@@ -225,8 +244,34 @@ class MainActivity : ComponentActivity() {
                     engineHolder = engineHolder,
                     appUnlocked = unlockedFlow,
                     keepBackgroundPlayback = settings?.keepBackgroundPlayback ?: false,
+                    // 解锁回前台时是否自动续播由它决定（开启 → 停在暂停帧，等用户手动播）
+                    appLockEnabled = settings?.appLockEnabled ?: true,
                     autoPlayNext = settings?.autoPlayNext ?: true,
                     localThumbnails = settings?.localThumbnails ?: true,
+                    // ── 播放参数（2026-10-25 接线）──
+                    // 这几项此前只在设置页展示，播放器全走硬编码（默认倍速 1x、双击 10s、画幅 FIT、
+                    // 字幕 16sp），用户改了完全没反应。映射统一放在这里（同下面的方向映射）。
+                    defaultSpeed = settings?.defaultSpeed ?: 1f,
+                    doubleTapSeekMs = settings?.doubleTapSeekMillis ?: 10_000L,
+                    initialScaleMode = when (settings?.defaultAspectRatio) {
+                        app.myplayer.core.datastore.AspectRatio.FILL ->
+                            app.myplayer.feature.player.ScaleMode.FILL
+                        app.myplayer.core.datastore.AspectRatio.CROP ->
+                            app.myplayer.feature.player.ScaleMode.CROP
+                        app.myplayer.core.datastore.AspectRatio.ORIGINAL ->
+                            app.myplayer.feature.player.ScaleMode.ORIGINAL
+                        else -> app.myplayer.feature.player.ScaleMode.FIT
+                    },
+                    subtitleStyle = (settings?.subtitleStyle
+                        ?: app.myplayer.core.datastore.SubtitleStyle()).let { st ->
+                        app.myplayer.feature.player.PlayerSubtitleStyle(
+                            fontSizeSp = st.fontSizeSp,
+                            textColorArgb = st.textColorArgb,
+                            outlineColorArgb = st.outlineColorArgb,
+                            outlineWidthDp = st.outlineWidthDp,
+                            verticalPosition = st.verticalPosition,
+                        )
+                    },
                     serverId = if (showWelcome) null else activeConfig.id,
                     source = source,
                     // datastore 的 ScreenOrientation → 播放模块的 PlayerOrientation（分层映射）

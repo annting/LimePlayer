@@ -21,6 +21,9 @@ import javax.inject.Singleton
 @Singleton
 class NetworkPolicy @Inject constructor() {
     @Volatile var allowCleartextHttp: Boolean = false
+
+    /** 「信任自签证书」（设置 → 网络）：交由 OkHttp 在每次 TLS 握手时读取。 */
+    @Volatile var trustSelfSignedCert: Boolean = false
 }
 
 /** 组装进 `NetworkConfig.extraInterceptors`：设置关闭时拦截所有明文请求。 */
@@ -34,6 +37,9 @@ fun cleartextGuard(policy: NetworkPolicy): Interceptor = Interceptor { chain ->
 
 fun NetworkPolicy.bindSettings(settingsStore: SettingsStore, scope: CoroutineScope) {
     scope.launch {
-        settingsStore.settings.collect { allowCleartextHttp = it.allowCleartextHttp }
+        settingsStore.settings.collect {
+            allowCleartextHttp = it.allowCleartextHttp
+            trustSelfSignedCert = it.trustSelfSignedCert
+        }
     }
 }

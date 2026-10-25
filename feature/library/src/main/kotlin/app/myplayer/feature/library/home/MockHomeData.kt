@@ -37,8 +37,13 @@ interface HomeDataSource {
 /** 一屏首页数据。 */
 data class HomeSnapshot(
     val serverName: String,
+    /** 数据源形态：Emby 系 = 库，SMB = 顶层文件夹。 */
+    val sourceType: HomeSourceType = HomeSourceType.EMBY,
     val continueWatching: List<MediaItemDto> = emptyList(),
-    val libraries: List<HomeLibrarySection> = emptyList(),
+    /** 模块二入口：库或文件夹。 */
+    val myLibrariesOrFolders: List<HomeLibraryCard> = emptyList(),
+    /** 模块三：每个库/文件夹一行。 */
+    val dynamicSections: List<HomeLibrarySection> = emptyList(),
     val recentlyAdded: List<MediaItemDto> = emptyList(),
 )
 
@@ -62,11 +67,27 @@ class MockHomeDataSource(
     override suspend fun load(serverId: String): HomeSnapshot {
         delay(latencyMs)
         if (serverId in failFor) throw IllegalStateException("连接超时：192.168.31.15:8096 无响应")
+        val name = servers.firstOrNull { it.id == serverId }?.name ?: MockHomeData.EMBY_NAME
+
+        // SMB：没有媒体库概念 —— 顶层非空文件夹即分类，空文件夹在映射时被丢掉
+        if (serverId == MockHomeData.SMB_ID) {
+            return HomeSnapshot(
+                serverName = name,
+                sourceType = HomeSourceType.SMB,
+                continueWatching = MockHomeData.smbContinueWatching,
+                myLibrariesOrFolders = MockHomeData.smbFolders.toFolderCards(),
+                dynamicSections = MockHomeData.smbFolders.toFolderSections(),
+                recentlyAdded = MockHomeData.smbRecentlyAdded,
+            )
+        }
+
         val isFnos = serverId == MockHomeData.FNOS_ID
         return HomeSnapshot(
-            serverName = servers.firstOrNull { it.id == serverId }?.name ?: MockHomeData.EMBY_NAME,
+            serverName = name,
+            sourceType = HomeSourceType.EMBY,
             continueWatching = if (isFnos) MockHomeData.fnosContinueWatching else MockHomeData.continueWatching,
-            libraries = if (isFnos) MockHomeData.fnosLibraries else MockHomeData.libraries,
+            myLibrariesOrFolders = if (isFnos) MockHomeData.fnosLibraryCards else MockHomeData.libraryCards,
+            dynamicSections = if (isFnos) MockHomeData.fnosLibraries else MockHomeData.libraries,
             recentlyAdded = if (isFnos) MockHomeData.fnosRecentlyAdded else MockHomeData.recentlyAdded,
         )
     }
@@ -91,12 +112,15 @@ object MockHomeData {
 
     const val EMBY_ID = "srv-emby"
     const val FNOS_ID = "srv-fnos"
+    const val SMB_ID = "srv-smb"
     const val EMBY_NAME = "客厅 Emby"
     const val FNOS_NAME = "飞牛影视"
+    const val SMB_NAME = "客厅 NAS · SMB"
 
     val servers = listOf(
         HomeServerOption(EMBY_ID, EMBY_NAME, "http://192.168.31.15:8096"),
         HomeServerOption(FNOS_ID, FNOS_NAME, "http://192.168.31.16:5666"),
+        HomeServerOption(SMB_ID, SMB_NAME, "smb://192.168.31.20/media"),
     )
 
     // ---- Emby（主数据） ----
@@ -155,6 +179,14 @@ object MockHomeData {
         ),
     )
 
+    /** 「我的媒体库」：封面取各库第一条的缩略图；最后一个空库用来验证封面兜底。 */
+    val libraryCards: List<HomeLibraryCard> = listOf(
+        HomeLibraryCard("lib-movie", "电影", 486, libraries[0].items.firstOrNull()),
+        HomeLibraryCard("lib-tv", "电视剧", 214, libraries[1].items.firstOrNull()),
+        HomeLibraryCard("lib-doc", "纪录片", 68, libraries[2].items.firstOrNull()),
+        HomeLibraryCard("lib-mv", "音乐 MV", 0, null),
+    )
+
     val recentlyAdded: List<MediaItemDto> = listOf(
         poster("ra-1", "沙丘 2", 2024, 8.6f),
         poster("ra-2", "奥本海默", 2023, 8.9f),
@@ -165,7 +197,10 @@ object MockHomeData {
         poster("ra-7", "布达佩斯大饭店", 2014, 8.9f),
         poster("ra-8", "地球脉动", 2006, 9.7f),
         poster("ra-9", "寄生虫", 2019, 8.7f),
-    )
+    ).mapIndexed { index, item ->
+        // 入库时间错开 2~18 天（每条 +2 天）：首页设置的「时间范围 7 天」档正好演示物理过滤
+        item.copy(dateCreated = System.currentTimeMillis() - (index + 1L) * 2 * DAY_MS)
+    }
 
     // ---- 飞牛（第二台，用来验证切换来源） ----
 
@@ -200,6 +235,11 @@ object MockHomeData {
         ),
     )
 
+    val fnosLibraryCards: List<HomeLibraryCard> = listOf(
+        HomeLibraryCard("fn-movie", "电影", 132, fnosLibraries[0].items.firstOrNull()),
+        HomeLibraryCard("fn-tv", "剧集", 41, fnosLibraries[1].items.firstOrNull()),
+    )
+
     val fnosRecentlyAdded: List<MediaItemDto> = listOf(
         poster("fn-ra-1", "庆余年 第二季", 2024, 7.8f, FNOS_ID),
         poster("fn-ra-2", "海上钢琴师", 1998, 9.3f, FNOS_ID),
@@ -208,6 +248,57 @@ object MockHomeData {
         poster("fn-ra-5", "消失的爱人", 2014, 8.7f, FNOS_ID),
         poster("fn-ra-6", "琅琊榜", 2015, 9.4f, FNOS_ID),
     )
+
+    // ---- SMB（第三个「服务器」，用来验证文件夹形态） ----
+    //
+    // 注意：SMB 还没有真实数据源（source:smb 未实现），这批数据只服务 @Preview 与单测。
+    // 两个空文件夹（Downloads / Music）是**故意**放的：映射时应当被过滤掉。
+
+    val smbFolders: List<SmbFolder> = listOf(
+        SmbFolder(
+            name = "Movies",
+            items = listOf(
+                poster("smb-mv-1", "沙丘 2", 2024, 8.6f, SMB_ID),
+                poster("smb-mv-2", "奥本海默", 2023, 8.9f, SMB_ID),
+                poster("smb-mv-3", "星际穿越", 2014, 9.4f, SMB_ID),
+                poster("smb-mv-4", "盗梦空间", 2010, 9.3f, SMB_ID),
+                poster("smb-mv-5", "银翼杀手 2049", 2017, 8.5f, SMB_ID),
+            ),
+        ),
+        SmbFolder(
+            name = "TV Shows",
+            items = listOf(
+                poster("smb-tv-1", "三体", 2023, 8.7f, SMB_ID),
+                poster("smb-tv-2", "漫长的季节", 2023, 9.4f, SMB_ID),
+                poster("smb-tv-3", "繁花", 2023, 8.5f, SMB_ID),
+            ),
+        ),
+        SmbFolder(
+            name = "Documentaries",
+            items = listOf(
+                poster("smb-dc-1", "地球脉动", 2006, 9.7f, SMB_ID),
+                poster("smb-dc-2", "蓝色星球 II", 2017, 9.8f, SMB_ID),
+            ),
+        ),
+        // 空文件夹：里面没有受支持的视频文件 → 首页不展示
+        SmbFolder(name = "Downloads", items = emptyList()),
+        SmbFolder(name = "Music", items = emptyList()),
+    )
+
+    val smbContinueWatching: List<MediaItemDto> = listOf(
+        episode("smb-cw-1", "沙丘 2", totalMinutes = 166, watched = 0.28f),
+        episode("smb-cw-2", "三体", series = "三体", season = 1, number = 3, totalMinutes = 45, watched = 0.55f),
+    ).map { it.copy(serverId = SMB_ID) }
+
+    val smbRecentlyAdded: List<MediaItemDto> = listOf(
+        poster("smb-ra-1", "沙丘 2", 2024, 8.6f, SMB_ID),
+        poster("smb-ra-2", "三体", 2023, 8.7f, SMB_ID),
+        poster("smb-ra-3", "地球脉动", 2006, 9.7f, SMB_ID),
+        poster("smb-ra-4", "星际穿越", 2014, 9.4f, SMB_ID),
+        poster("smb-ra-5", "繁花", 2023, 8.5f, SMB_ID),
+    ).mapIndexed { index, item ->
+        item.copy(dateCreated = System.currentTimeMillis() - (index + 1L) * 2 * DAY_MS)
+    }
 
     // ---- 构造器 ----
 

@@ -10,7 +10,10 @@ object HttpClientFactory {
             .connectTimeout(config.connectTimeoutSeconds, TimeUnit.SECONDS)
             .readTimeout(config.readTimeoutSeconds, TimeUnit.SECONDS)
             .addInterceptor(AuthHeaderInterceptor(config.tokenProvider))
-        if (config.trustSelfSignedCert) builder.applyTrustAll()
+        // 运行期开关优先：「信任自签证书」改设置即时生效（见 DynamicTrustSupport）
+        val dynamicTrust = config.trustSelfSignedProvider
+        if (dynamicTrust != null) builder.applyDynamicTrust(dynamicTrust)
+        else if (config.trustSelfSignedCert) builder.applyTrustAll()
         config.extraInterceptors.forEach(builder::addInterceptor)
         return builder.build()
     }

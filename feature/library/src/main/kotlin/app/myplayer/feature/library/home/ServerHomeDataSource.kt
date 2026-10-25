@@ -69,10 +69,23 @@ class ServerHomeDataSource(
             // 空库不出横滑行：标题 + 空 LazyRow 会在大网格里留一块莫名的空白
             .filter { it.items.isNotEmpty() }
 
+        // 模块二（Emby 口径）：**只出非空库** —— 空库在首页没有入口意义。
+        // 封面借该库首条缩略图：MediaSource 没有「库封面」接口，首条既真实又不多发请求。
+        val cards = sections.map { section ->
+            HomeLibraryCard(
+                id = section.id,
+                name = section.name,
+                itemCount = section.totalCount,
+                cover = section.items.firstOrNull(),
+            )
+        }
+
         HomeSnapshot(
             serverName = serverName,
+            sourceType = HomeSourceType.EMBY,
             continueWatching = resumePlan.await(),
-            libraries = sections,
+            myLibrariesOrFolders = cards,
+            dynamicSections = sections,
             recentlyAdded = latestPlan.await(),
         )
     }

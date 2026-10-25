@@ -14,7 +14,6 @@ class SettingsStoreTest {
         assertThat(s.keepBackgroundPlayback).isFalse()
         assertThat(s.unlockMethod).isEqualTo(UnlockMethod.PATTERN)
         assertThat(s.hideRecentsSnapshot).isFalse()
-        assertThat(s.libraryDisplayMode).isEqualTo(LibraryDisplayMode.AUTO)
     }
 
     @Test fun `setSpeed 会持久化且不污染其它项`() = runTest {

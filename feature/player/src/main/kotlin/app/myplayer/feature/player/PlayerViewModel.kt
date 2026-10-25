@@ -120,6 +120,8 @@ class PlayerViewModel(
     private var nextUpJob: Job? = null
     private var seekHintJob: Job? = null
     private var autoPlayNextEnabled = true
+    /** 设置里的「画面比例」只在本次播放会话首播时套用一次（连播/重试不重置）。 */
+    private var appliedInitialPrefs = false
 
     init {
         viewModelScope.launch {
@@ -168,11 +170,21 @@ class PlayerViewModel(
         source: MediaSource,
         caps: ClientCapabilities,
         autoPlayNext: Boolean = true,
+        /** 设置页「默认倍速」：仅**本次会话首次起播**生效（连播下一集沿用当前速度）。 */
+        defaultSpeed: Float = 1f,
+        /** 设置页「画面比例」：同一次会话首次起播时作为初始缩放模式。 */
+        initialScaleMode: ScaleMode = ScaleMode.FIT,
     ) {
         if (startedItemId == itemId) return
         startedItemId = itemId
         sessionCaps = caps
         autoPlayNextEnabled = autoPlayNext
+        if (!appliedInitialPrefs) {
+            // 只在**这台设备的本次播放会话**首次起播时套用设置里的画幅，
+            // 之后的连播下一集 / 重试都不再重置（否则用户手动切的画幅会被打回默认）
+            appliedInitialPrefs = true
+            _ui.update { it.copy(scaleMode = initialScaleMode) }
+        }
         viewModelScope.launch {
             try {
                 val item = source.getItemDetail(itemId)
@@ -182,6 +194,9 @@ class PlayerViewModel(
                 currentPlan = plan
                 transcodeRetried = false
                 engine.prepare(plan, item.userData.resumePositionTicks.millis)
+                // 「默认倍速」：prepare 之后、play 之前设，首帧就是用户要的速度。
+                // 引擎侧越界会自己收敛（0.5x–3.0x），这里再夹一次免得传进脏值。
+                if (defaultSpeed > 0f) engine.setSpeed(defaultSpeed.coerceIn(0.5f, 3.0f))
                 engine.play()
                 // 相邻集异步加载（不阻塞起播；网络失败就等于没有连播）
                 adjacent = runCatching { source.getAdjacentEpisodes(item) }.getOrElse { AdjacentEpisodes() }
@@ -245,10 +260,16 @@ class PlayerViewModel(
     /**
      * 恢复播放：**先解锁、再恢复**（调用方须确认应用锁已解除 —— 观察 appUnlocked 流）。
      * 幂等：未因后台暂停过时 no-op。
+     *
+     * [autoResume] 为 false 时**只清标记、不起播** —— 应用锁场景专用（2026-10-25 用户要求）：
+     * 开锁回来时画面还停在暂停帧，用户点一下才继续，避免"刚解完锁视频自己动起来"
+     * （锁屏图案还没看清就开始播，也很容易误触到进度）。
+     * 应用锁关闭时仍走 [autoResume] = true 的老路径。
      */
-    fun resumeFromBackground() {
+    fun resumeFromBackground(autoResume: Boolean = true) {
         if (!pausedByBackground) return
         pausedByBackground = false
+        if (!autoResume) return
         engine.play()
         notifyInteraction()
     }
@@ -406,7 +427,8 @@ class PlayerViewModel(
         nextUpJob?.cancel()
         _ui.update { it.copy(nextUpVisible = false, nextUpCountdown = 0) }
         startedItemId = null            // 允许同 VM 换集重载
-        start(next.id, src, caps, autoPlayNextEnabled)
+        // 把当前速度带过去：连播下一集沿用用户此刻的速度，而不是回落到 1.0x
+        start(next.id, src, caps, autoPlayNextEnabled, defaultSpeed = _ui.value.speed)
     }
 
     // ---- 降级与重试（`03` §5.8）----
@@ -454,7 +476,7 @@ class PlayerViewModel(
         _ui.update { it.copy(error = null, fallbackNotice = null, finished = false) }
         transcodeRetried = false
         startedItemId = null
-        start(item.id, src, caps, autoPlayNextEnabled)
+        start(item.id, src, caps, autoPlayNextEnabled, defaultSpeed = _ui.value.speed)
     }
 
     /** 拖动到某位置时该显示的预览分片图（无 trickplay 时返回 null）。 */

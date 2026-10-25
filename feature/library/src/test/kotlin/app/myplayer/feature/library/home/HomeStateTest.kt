@@ -1,5 +1,6 @@
 package app.myplayer.feature.library.home
 
+import app.myplayer.core.datastore.HomeModuleSettings
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.SourceType
 import app.myplayer.core.model.Ticks
@@ -37,15 +38,49 @@ class HomeStateTest {
     }
 
     @Test
-    fun `三个模块任意一个有数据就算有内容`() {
+    fun `任意一个有数据的模块就算有内容`() {
         val item = mockItem()
         assertThat(HomeUiState(continueWatchingList = listOf(item)).hasContent).isTrue()
-        assertThat(HomeUiState(libraries = listOf(HomeLibrarySection("lib", "电影", listOf(item)))).hasContent).isTrue()
+        assertThat(HomeUiState(dynamicSections = listOf(HomeLibrarySection("lib", "电影", listOf(item)))).hasContent).isTrue()
         assertThat(HomeUiState(recentlyAddedList = listOf(item)).hasContent).isTrue()
+        // 「我的媒体库」只有库、没有片子时，页面也该显示出来（不是空态）
+        assertThat(HomeUiState(myLibrariesOrFolders = listOf(HomeLibraryCard("lib", "电影", 0))).hasContent).isTrue()
+    }
+
+    @Test
+    fun `只开最近添加且该模块为空时不算有内容（否则页面全空白）`() {
+        val onlyRecent = HomeModuleSettings(
+            showContinueWatching = false,
+            showLibraryEntries = false,
+            showDynamicSections = false,
+            showRecentlyAdded = true,
+        )
+        val item = mockItem()
+        val state = HomeUiState(
+            settings = onlyRecent,
+            // 其它模块的数据都还在，只是开关关掉了 —— 它们不该让 hasContent 变真
+            continueWatchingList = listOf(item),
+            myLibrariesOrFolders = listOf(HomeLibraryCard("lib", "电影", 3, cover = item)),
+            dynamicSections = listOf(HomeLibrarySection("lib", "电影", listOf(item))),
+            recentlyAddedList = emptyList(),
+        )
+        assertThat(state.allModulesHidden).isFalse()
+        assertThat(state.hasContent).isFalse()
+        assertThat(state.onlyRecentlyAdded).isTrue()
+
+        // 该模块有数据 → 立刻算有内容
+        assertThat(state.copy(recentlyAddedList = listOf(item)).hasContent).isTrue()
+    }
+
+    @Test
+    fun `模块开关关闭时它的数据不参与 hasContent`() {
+        val item = mockItem()
+        val closed = HomeModuleSettings(showRecentlyAdded = false)
+        assertThat(HomeUiState(settings = closed, recentlyAddedList = listOf(item)).hasContent).isFalse()
+        assertThat(HomeUiState(settings = closed, recentlyAddedList = listOf(item)).onlyRecentlyAdded).isFalse()
     }
 
     // ---- 进度 / 剩余时长 ----
-
     @Test
     fun `续播进度按时长比例计算`() {
         val item = mockItem(durationMinutes = 100, watchedFraction = 0.32f)
@@ -74,6 +109,45 @@ class HomeStateTest {
     @Test
     fun `已看完没有剩余时长`() {
         assertThat(mockItem(durationMinutes = 90, watchedFraction = 1f).remainingWatchText()).isNull()
+    }
+
+    // ---- SMB 文件夹映射（空文件夹过滤） ----
+
+    @Test
+    fun `SMB 空文件夹被过滤，非空文件夹同时变成卡片与分区`() {
+        val folders = listOf(
+            SmbFolder("Movies", listOf(mockItem())),
+            SmbFolder("Downloads", emptyList()),   // 没有受支持的视频文件
+            SmbFolder("Music", emptyList()),
+        )
+
+        val cards = folders.toFolderCards()
+        assertThat(cards.map { it.name }).containsExactly("Movies")
+        // 文件夹卡：不走封面、用深灰底 + 图标
+        assertThat(cards.single().isFolder).isTrue()
+        assertThat(cards.single().cover).isNull()
+        assertThat(cards.single().itemCount).isEqualTo(1)
+
+        val sections = folders.toFolderSections()
+        assertThat(sections.map { it.name }).containsExactly("Movies")
+        assertThat(sections.single().items).hasSize(1)
+    }
+
+    @Test
+    fun `SMB 每个文件夹一行最多取 limit 条`() {
+        val items = (1..30).map {
+            MediaItemDto(
+                id = "f-$it",
+                serverId = "smb",
+                sourceType = SourceType.LOCAL,
+                title = "第 $it 个",
+            )
+        }
+        val sections = listOf(SmbFolder("Movies", items)).toFolderSections(limit = 20)
+
+        assertThat(sections.single().items).hasSize(20)
+        // totalCount 仍是真实总数（「查看全部」据此判断还有多少）
+        assertThat(sections.single().totalCount).isEqualTo(30)
     }
 
     // ---- 回弹位移 ----

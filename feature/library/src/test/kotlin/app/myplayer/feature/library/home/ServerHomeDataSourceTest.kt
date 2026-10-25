@@ -42,10 +42,10 @@ class ServerHomeDataSourceTest {
 
         assertThat(snap.serverName).isEqualTo("客厅 Emby")
         assertThat(snap.continueWatching.map { it.id }).containsExactly("cw")
-        assertThat(snap.libraries.map { it.name }).containsExactly("电影", "电视剧").inOrder()
+        assertThat(snap.dynamicSections.map { it.name }).containsExactly("电影", "电视剧").inOrder()
         // totalCount 用服务端库的 itemCount（「查看全部」据此判断是否值得跳），不是首屏条数
-        assertThat(snap.libraries.first().totalCount).isEqualTo(486)
-        assertThat(snap.libraries.first().items).hasSize(2)
+        assertThat(snap.dynamicSections.first().totalCount).isEqualTo(486)
+        assertThat(snap.dynamicSections.first().items).hasSize(2)
         assertThat(snap.recentlyAdded).hasSize(2)
     }
 
@@ -73,7 +73,7 @@ class ServerHomeDataSourceTest {
         assertThat(snap.continueWatching).isEmpty()
         assertThat(snap.recentlyAdded).isEmpty()
         // 关键：库还在 → hasContent 为真 → 页面不会整屏空白，也不会被误判成离线
-        assertThat(snap.libraries).hasSize(1)
+        assertThat(snap.dynamicSections).hasSize(1)
     }
 
     @Test
@@ -86,7 +86,7 @@ class ServerHomeDataSourceTest {
 
         val snap = ServerHomeDataSource(source, "x").load("srv-test")
 
-        assertThat(snap.libraries.map { it.id }).containsExactly("lib-movie")
+        assertThat(snap.dynamicSections.map { it.id }).containsExactly("lib-movie")
     }
 
     @Test
@@ -102,7 +102,7 @@ class ServerHomeDataSourceTest {
 
         val snap = ServerHomeDataSource(source, "x").load("srv-test")
 
-        assertThat(snap.libraries.single().items.map { it.id }).containsExactly("ep1")
+        assertThat(snap.dynamicSections.single().items.map { it.id }).containsExactly("ep1")
         assertThat(calls).isEqualTo(2)
     }
 
@@ -116,6 +116,34 @@ class ServerHomeDataSourceTest {
 
         data.image(item("m1"), ImageKind.THUMB)
         assertThat(source.lastImageSize).isEqualTo(ImageSize.LARGE)
+    }
+
+    @Test
+    fun `模块二只出非空库，封面借该库首条缩略图`() = runTest {
+        val source = FakeSource(
+            libraries = listOf(
+                library("lib-movie", "电影", 486),
+                library("lib-empty", "空库"),
+                library("lib-broken", "坏库"),
+            ),
+            onItems = { q ->
+                when (q.libraryId) {
+                    "lib-movie" -> listOf(item("m1"), item("m2"))
+                    else -> emptyList()
+                }
+            },
+            failLibraryIds = setOf("lib-broken"),
+        )
+
+        val snap = ServerHomeDataSource(source, "x").load("srv-test")
+
+        // Emby 口径：**过滤空库** —— 空库、取数失败的库都不出卡片（与模块三同一口径）
+        assertThat(snap.myLibrariesOrFolders.map { it.id }).containsExactly("lib-movie")
+        assertThat(snap.myLibrariesOrFolders[0].cover?.id).isEqualTo("m1")
+        assertThat(snap.myLibrariesOrFolders[0].itemCount).isEqualTo(486)
+        assertThat(snap.myLibrariesOrFolders[0].isFolder).isFalse()
+        // 形态标记：Emby 源
+        assertThat(snap.sourceType).isEqualTo(HomeSourceType.EMBY)
     }
 
     @Test

@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -80,6 +81,8 @@ data class SettingsOption<T>(val value: T, val label: String)
 fun SettingsGroup(
     title: String,
     modifier: Modifier = Modifier,
+    /** 卡片底色；默认 surface。传入渐变色可以做「高亮闪烁」（如首页设置定位动画）。 */
+    containerColor: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val app = LocalAppColors.current
@@ -97,7 +100,7 @@ fun SettingsGroup(
                 .fillMaxWidth()
                 // 页面底是 background(bg)，卡片压 surface，靠 1dp 描边收边
                 .clip(AppShape.card)
-                .background(scheme.surface)
+                .background(containerColor ?: scheme.surface)
                 .border(Dimens.hairline, app.border, AppShape.card),
             content = content,
         )

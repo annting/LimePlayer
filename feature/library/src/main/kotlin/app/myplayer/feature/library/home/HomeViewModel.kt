@@ -2,13 +2,19 @@ package app.myplayer.feature.library.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.myplayer.core.datastore.HomeModuleSettings
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -26,11 +32,13 @@ import kotlinx.coroutines.launch
  * @param servers 顶部「切换来源」候选 —— 来自 `ServerConfigStore`（真实配置），
  *   不再是数据源的一部分：一台 [MediaSource] 只对应一台服务器，两者职责不同。
  * @param data 取数实现：[ServerHomeDataSource]（真机）/ [MockHomeDataSource]（测试与预览）。
+ * @param homeSettings 首页设置的读写入口（与设置页共用同一份 DataStore 存储）。
  */
 class HomeViewModel(
     serverId: String?,
     private val servers: List<HomeServerOption>,
     data: HomeDataSource,
+    homeSettings: HomeSettingsRepository,
 ) : ViewModel() {
 
     private var data: HomeDataSource = data
@@ -43,7 +51,25 @@ class HomeViewModel(
             serverName = servers.firstOrNull { it.id == serverId }?.name,
         )
     )
-    val state: StateFlow<HomeUiState> = _state.asStateFlow()
+    // 当前源形态流：给 repository 用来在 Emby / SMB 两份设置之间自动切换
+    private val sourceTypeFlow = _state.map { it.sourceType }.distinctUntilChanged()
+
+    /**
+     * 对外状态 = **加载流程 ⊕ 首页设置**。
+     *
+     * 响应式联动的核心：`_state` 只表达「取数发生了什么」，设置另成一条流 ——
+     * `combine` 把两者合并成新的 [HomeUiState]。设置页写 DataStore → `settingsStore.settings`
+     * 立刻发新值 → combine 重算 → 收集方（`collectAsStateWithLifecycle`）就地重组。
+     * **整个过程与「返回首页」这个动作无关**，所以不需要刷新。
+     */
+    val state: StateFlow<HomeUiState> =
+        combine(_state, homeSettings.observe(sourceTypeFlow)) { snap, settings ->
+            snap.copy(
+                settings = settings,
+                // 最近添加在 VM 层做**物理过滤**（按天 + 按量），UI 只管渲染
+                recentlyAddedList = applyRecentlyAddedWindow(snap.recentlyAddedList, settings),
+            )
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, _state.value)
 
     private var loadJob: Job? = null
 
@@ -104,8 +130,10 @@ class HomeViewModel(
                             isRefreshing = false,
                             error = null,
                             serverName = snapshot.serverName.ifBlank { it.serverName },
+                            sourceType = snapshot.sourceType,
                             continueWatchingList = snapshot.continueWatching,
-                            libraries = snapshot.libraries,
+                            myLibrariesOrFolders = snapshot.myLibrariesOrFolders,
+                            dynamicSections = snapshot.dynamicSections,
                             recentlyAddedList = snapshot.recentlyAdded,
                         )
                     }
@@ -121,4 +149,38 @@ class HomeViewModel(
                 }
         }
     }
+}
+
+/** 一天的毫秒数（最近添加的「按天过滤」窗口单位）。 */
+internal const val DAY_MS: Long = 24L * 60L * 60L * 1000L
+
+/**
+ * 最近添加的**物理过滤**（`docs/03` §7 首页设置 · 第四步）：
+ *
+ * 1. **按天**：`dateCreated` 距今不超过 `settings.recentlyAddedDays` 天的条目保留；
+ *    **`dateCreated` 为 null 的条目不参与按天判定，但不丢弃** —— 见下方注释；
+ * 2. **按量**：按时间倒序（时间未知的排最后）后 `take(settings.recentlyAddedLimit)`。
+ *
+ * 纯函数：`nowMs` 由调用方注入，测试不依赖真实时钟。
+ *
+ * ## 为什么 null 不再直接滤掉（2026-10-24 修正）
+ * 上一版口径是「无法判定时间就丢掉」。但有些源**根本没有入库时间**：飞牛的
+ * `item/list` 只保证 `create_time DESC` 排序、下发的条目没有 `create_time` 字段映射到
+ * `dateCreated`；SMB 老缓存也可能缺。一刀切的结果是「最近添加」整块消失 ——
+ * 用户只开这一个模块时首页直接空白（本次 bug）。这类条目仍受 `recentlyAddedLimit` 约束，
+ * 只是无法按天裁；有时间的条目照旧严格按天过滤。
+ */
+internal fun applyRecentlyAddedWindow(
+    items: List<MediaItemDto>,
+    settings: HomeModuleSettings,
+    nowMs: Long = System.currentTimeMillis(),
+): List<MediaItemDto> {
+    val oldest = nowMs - settings.recentlyAddedDays.coerceAtLeast(0) * DAY_MS
+    return items
+        .filter {
+            val created = it.dateCreated
+            created == null || created >= oldest
+        }
+        .sortedByDescending { it.dateCreated ?: Long.MIN_VALUE }
+        .take(settings.recentlyAddedLimit.coerceAtLeast(0))
 }

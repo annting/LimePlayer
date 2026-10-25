@@ -87,8 +87,12 @@ class SettingsViewModel(
     fun setSearchTraditionalSimplified(v: Boolean) = launch { settingsStore.setSearchTraditionalSimplified(v) }
     fun setAllowCleartextHttp(v: Boolean) = launch { settingsStore.setAllowCleartextHttp(v) }
     fun setTrustSelfSignedCert(v: Boolean) = launch { settingsStore.setTrustSelfSignedCert(v) }
-    fun setLibraryDisplayMode(v: app.myplayer.core.datastore.LibraryDisplayMode) =
-        launch { settingsStore.setLibraryDisplayMode(v) }
+
+    // ---- 首页（Emby / SMB 各一套，首页设置二级页） ----
+    fun setEmbyHomeSettings(v: app.myplayer.core.datastore.HomeModuleSettings) =
+        launch { settingsStore.setEmbyHomeSettings(v) }
+    fun setSmbHomeSettings(v: app.myplayer.core.datastore.HomeModuleSettings) =
+        launch { settingsStore.setSmbHomeSettings(v) }
 
     private fun launch(block: suspend () -> Unit) {
         viewModelScope.launch { block() }

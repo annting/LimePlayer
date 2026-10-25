@@ -4,6 +4,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -59,11 +62,15 @@ fun MainScaffold(
     onEditServer: (String) -> Unit,
     onPlay: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
+    /** 打开媒体库详情页（首页「我的媒体库 / 我的文件夹」卡片、「查看全部」）。 */
+    onOpenLibraryDetail: (libraryId: String, title: String, smb: Boolean) -> Unit,
 ) {
     // 启动落点 = 首页（聚合页）：一进来就该看到继续观看与最近添加，而不是库页的筛选器。
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
     // 「查看全部」要**带着那个库**一起跳过去：只切 tab 会让库页停在它自己上次选中的库
     var pendingLibraryId by rememberSaveable { mutableStateOf<String?>(null) }
+    // 首页「全关」空态的「去设置开启」：切 SETTINGS tab 后自动滚动定位「首页」分组并高亮
+    var pendingHomeSettings by rememberSaveable { mutableStateOf(false) }
 
     // 设置 tab 的二级页（字幕设置 / 关于）盖住整块区域，**不该再显示悬浮导航**。
     // 状态放在这一层而不是让子页自己管：切走 tab 再切回来（子导航会恢复路由）也不会漏；
@@ -111,8 +118,16 @@ fun MainScaffold(
         // 加了等于把内容 viewport 裁在导航栏上方，滚动时底下永远是空的（塌回"不透明黑边"）。
         // 内容铺满到屏幕底，底部留白交给各页面的 contentPadding（LocalBottomNavSpace）。
         CompositionLocalProvider(LocalBottomNavSpace provides contentBottom) {
-            tabStates.SaveableStateProvider(selectedTab.name) {
-                when (selectedTab) {
+            // tab 之间用 Crossfade 过渡（220ms 淡入淡出）：原来的 when 硬切是
+            // 「去设置开启」跳转闪烁的根因 —— HOME 内容瞬间消失、SETTINGS 瞬间出现。
+            // SaveableStateProvider 移进 Crossfade lambda：过渡期两个 tab 同时组合，状态互不串。
+            Crossfade(
+                targetState = selectedTab,
+                animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                label = "mainTab",
+            ) { tab ->
+                tabStates.SaveableStateProvider(tab.name) {
+                    when (tab) {
                     MainTab.HOME -> HomeDestination(
                         serverId = serverId,
                         source = source,
@@ -121,10 +136,12 @@ fun MainScaffold(
                         onAddServer = onAddServer,
                         onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
-                        // 「查看全部」= 切到媒体库 tab 并选中该库
-                        onOpenLibrary = { section ->
-                            pendingLibraryId = section.id
-                            selectedTab = MainTab.LIBRARY
+                        // 「我的媒体库」卡片与「查看全部」都进**媒体库详情页**（2026-10-24 改版）；
+                        // 旧的「切库 tab」路径（pendingLibraryId）保留给库 tab 自己用
+                        onOpenLibrary = onOpenLibraryDetail,
+                        onGoToHomeSettings = {
+                            pendingHomeSettings = true
+                            selectedTab = MainTab.SETTINGS
                         },
                     )
                     MainTab.LIBRARY -> LibraryDestination(
@@ -145,7 +162,6 @@ fun MainScaffold(
                         serverId = serverId,
                         caps = caps,
                         localThumbnails = localThumbnails,
-                        onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
                     )
                     MainTab.SETTINGS -> SettingsDestination(
@@ -154,8 +170,11 @@ fun MainScaffold(
                         tokenStore = tokenStore,
                         onAddServer = onAddServer,
                         onEditServer = onEditServer,
+                        highlightHomeSettings = pendingHomeSettings,
+                        onHomeSettingsHighlightHandled = { pendingHomeSettings = false },
                         onSubPageChange = { settingsSubPage = it },
                     )
+                }
                 }
             }
         }

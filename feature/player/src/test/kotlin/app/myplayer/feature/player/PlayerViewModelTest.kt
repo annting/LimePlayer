@@ -397,6 +397,38 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun `应用锁开启时解锁回来只解标记、不自动起播`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = vm(engine, FakeSource(item(), plan))
+        runCurrent()
+        engine.emit(EngineState(status = EngineStatus.READY, isPlaying = true))
+        runCurrent()
+
+        // 切后台：暂停
+        vm.onAppBackgrounded(keepBackgroundPlayback = false)
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isFalse()
+        val playsAfterStart = engine.playCalls
+
+        // 解锁完成 → autoResume=false：**不**调 play()，画面停在暂停帧
+        vm.resumeFromBackground(autoResume = false)
+        runCurrent()
+        assertThat(vm.ui.value.isPlaying).isFalse()
+        assertThat(engine.playCalls).isEqualTo(playsAfterStart)
+
+        // 标记已清：再收到一次 unlock 事件也不会补播（幂等）
+        vm.resumeFromBackground(autoResume = false)
+        runCurrent()
+        assertThat(engine.playCalls).isEqualTo(playsAfterStart)
+
+        // 用户手动点播放 → 这时才真正继续
+        vm.togglePlayPause()
+        runCurrent()
+        assertThat(engine.playCalls).isEqualTo(playsAfterStart + 1)
+        assertThat(vm.ui.value.isPlaying).isTrue()
+    }
+
+    @Test
     fun `未播放时切后台不设恢复标记`() = runTest(testDispatcher) {
         val engine = FakeEngine()
         val vm = vm(engine, FakeSource(item(), plan))
@@ -443,6 +475,25 @@ class PlayerViewModelTest {
         assertThat(engine.speed).isEqualTo(3f)
 
         vm.setScaleMode(ScaleMode.CROP)
+        assertThat(vm.ui.value.scaleMode).isEqualTo(ScaleMode.CROP)
+    }
+
+    @Test
+    fun `起播时套用设置里的默认倍速与画面比例`() = runTest(testDispatcher) {
+        val engine = FakeEngine()
+        val vm = PlayerViewModel(engine, reporterFactory = null).also {
+            it.start(
+                "i1", FakeSource(item(), plan), caps,
+                autoPlayNext = true,
+                defaultSpeed = 1.75f,
+                initialScaleMode = ScaleMode.CROP,
+            )
+        }
+        runCurrent()
+
+        // 默认倍速必须在 prepare 之后真的设进引擎（旧实现只在设置页存值，播放器恒 1.0x）
+        assertThat(engine.speed).isEqualTo(1.75f)
+        // 画面比例同理：旧实现 PlayerUiState 恒为 FIT
         assertThat(vm.ui.value.scaleMode).isEqualTo(ScaleMode.CROP)
     }
 

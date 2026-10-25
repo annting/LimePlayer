@@ -39,6 +39,7 @@ import app.myplayer.feature.library.LibraryViewModel
 import app.myplayer.feature.library.home.HomeDataSource
 import app.myplayer.feature.library.home.HomeScreen
 import app.myplayer.feature.library.home.HomeServerOption
+import app.myplayer.feature.library.home.HomeSourceType
 import app.myplayer.feature.library.home.HomeViewModel
 import app.myplayer.feature.library.home.OfflineHomeDataSource
 import app.myplayer.feature.library.home.ServerHomeDataSource
@@ -186,12 +187,24 @@ fun AppNavHost(
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>,
     keepBackgroundPlayback: Boolean,
     autoPlayNext: Boolean,
+    /** 应用锁开关（设置 → 隐私）：决定「解锁回前台是否自动续播」。 */
+    appLockEnabled: Boolean = true,
     localThumbnails: Boolean,
     serverId: String?,
     source: MediaSource?,
     /** 设置页「画面 · 方向」：播放页的默认方向（AUTO / 横屏 / 竖屏）。 */
     defaultOrientation: app.myplayer.feature.player.PlayerOrientation =
         app.myplayer.feature.player.PlayerOrientation.AUTO,
+    /** 设置页「播放 · 默认倍速」：起播速度。 */
+    defaultSpeed: Float = 1f,
+    /** 设置页「播放 · 双击快进」：双击 / 快进快退按钮的步长（ms）。 */
+    doubleTapSeekMs: Long = 10_000L,
+    /** 设置页「画面 · 画面比例」：起播时的初始缩放模式。 */
+    initialScaleMode: app.myplayer.feature.player.ScaleMode =
+        app.myplayer.feature.player.ScaleMode.FIT,
+    /** 设置页「字幕设置」：字号 / 颜色 / 描边 / 位置。 */
+    subtitleStyle: app.myplayer.feature.player.PlayerSubtitleStyle =
+        app.myplayer.feature.player.PlayerSubtitleStyle(),
     /** 是否处于画中画（PiP 里播放页要取消假横屏）。 */
     inPictureInPicture: Boolean = false,
 ) {
@@ -324,6 +337,12 @@ fun AppNavHost(
                     onEditServer = { id -> nav.navigate("${Routes.EDIT_SERVER}/$id") },
                     onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
                     onOpenDetail = { itemId -> nav.navigate("${Routes.DETAIL}/$itemId") },
+                    onOpenLibraryDetail = { libraryId, title, smb ->
+                        nav.navigate(
+                            "${Routes.LIBRARY_DETAIL}/$libraryId?title=" +
+                                android.net.Uri.encode(title) + "&smb=$smb",
+                        )
+                    },
                 )
             }
         }
@@ -417,6 +436,42 @@ fun AppNavHost(
         }
 
         composable(
+            route = "${Routes.LIBRARY_DETAIL}/{libraryId}?title={title}&smb={smb}",
+            arguments = listOf(
+                navArgument("libraryId") { type = NavType.StringType },
+                navArgument("title") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument("smb") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
+            ),
+        ) { entry ->
+            val libraryId = entry.arguments?.getString("libraryId").orEmpty()
+            val title = android.net.Uri.decode(entry.arguments?.getString("title").orEmpty())
+            val smb = entry.arguments?.getBoolean("smb") ?: false
+            val src = source
+            if (src != null && libraryId.isNotEmpty() || smb) {
+                BottomInsetScreen {
+                    LibraryDetailDestination(
+                        source = src,
+                        serverId = serverId.orEmpty(),
+                        libraryId = libraryId,
+                        title = title,
+                        smb = smb,
+                        onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
+                        onOpenDetail = { item -> nav.navigate("${Routes.DETAIL}/${item.id}") },
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+            } else {
+                LaunchedEffect(Unit) { nav.popBackStack() }
+            }
+        }
+
+        composable(
             route = "${Routes.PLAYER}/{itemId}",
             arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
             // 播放页退场按「画面是否横向」分流（用户 2026-10-23 定）：
@@ -445,7 +500,12 @@ fun AppNavHost(
                     onBack = { nav.popBackStack() },
                     appUnlocked = appUnlocked,
                     keepBackgroundPlayback = keepBackgroundPlayback,
+                    appLockEnabled = appLockEnabled,
                     autoPlayNext = autoPlayNext,
+                    defaultSpeed = defaultSpeed,
+                    doubleTapSeekMs = doubleTapSeekMs,
+                    initialScaleMode = initialScaleMode,
+                    subtitleStyle = subtitleStyle,
                     defaultOrientation = defaultOrientation,
                     inPictureInPicture = inPictureInPicture,
                     onLandscapeChange = { landscape, fakeRotation ->
@@ -499,6 +559,9 @@ internal fun SettingsDestination(
     tokenStore: TokenStore,
     onAddServer: () -> Unit,
     onEditServer: (String) -> Unit,
+    /** 首页「全关」空态请求定位「首页设置」：设置列表自动滚动到该分组并高亮闪烁。 */
+    highlightHomeSettings: Boolean = false,
+    onHomeSettingsHighlightHandled: () -> Unit = {},
     /** 二级页开关：进/出「字幕设置」「关于」时通知外层隐藏悬浮导航（tab 根页才该有导航）。 */
     onSubPageChange: (Boolean) -> Unit = {},
 ) {
@@ -556,9 +619,11 @@ internal fun SettingsDestination(
                 onSearchTraditionalSimplified = vm::setSearchTraditionalSimplified,
                 onAllowCleartextHttp = vm::setAllowCleartextHttp,
                 onTrustSelfSignedCert = vm::setTrustSelfSignedCert,
-                onLibraryDisplayMode = vm::setLibraryDisplayMode,
+                onHomeSettings = { subNav.navigate(SUB_ROUTE_HOME) },
                 onAbout = { subNav.navigate(SUB_ROUTE_ABOUT) },
                 onBack = { /* tab 页无返回 */ },
+                highlightHomeSettings = highlightHomeSettings,
+                onHighlightHandled = onHomeSettingsHighlightHandled,
             )
         }
         composable(SUB_ROUTE_SUBTITLE) {
@@ -566,6 +631,17 @@ internal fun SettingsDestination(
                 app.myplayer.feature.settings.SubtitleSettingsScreen(
                     style = state.settings.subtitleStyle,
                     onStyleChange = vm::setSubtitleStyle,
+                    onBack = { subNav.popBackStack() },
+                )
+            }
+        }
+        composable(SUB_ROUTE_HOME) {
+            OpaqueScreen {
+                app.myplayer.feature.settings.HomeSettingsPage(
+                    emby = state.settings.embyHomeSettings,
+                    smb = state.settings.smbHomeSettings,
+                    onEmbyChange = vm::setEmbyHomeSettings,
+                    onSmbChange = vm::setSmbHomeSettings,
                     onBack = { subNav.popBackStack() },
                 )
             }
@@ -595,6 +671,56 @@ internal fun SettingsDestination(
  * 顶部栏的服务器名字与列表来自 `ServerConfigStore`；切源写 `SettingsStore.activeServerId`
  * —— 与设置页「设为当前」同一条路径，`activeConfig` 变化后 `source` 重建、首页整体重新取数。
  */
+/**
+ * 媒体库详情页（`Routes.LIBRARY_DETAIL`）。
+ *
+ * - **Emby**：[MediaSource.getItems] 按 [libraryId] 拉该库全部条目（≤200），2:3 海报网格；
+ * - **SMB**（[smb] = true）：源未实现，由 `LibraryDetailMock` 按文件夹名出数 ——
+ *   第一层文件夹已被首页映射成库，这里只渲染视频文件（16:9）。
+ */
+@Composable
+internal fun LibraryDetailDestination(
+    source: MediaSource?,
+    serverId: String,
+    libraryId: String,
+    title: String,
+    smb: Boolean,
+    onPlay: (String) -> Unit,
+    onOpenDetail: (item: app.myplayer.core.model.MediaItemDto) -> Unit,
+    onBack: () -> Unit,
+) {
+    val vm: app.myplayer.feature.library.LibraryDetailViewModel = viewModel(
+        key = "libdetail-$libraryId-$smb",
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T =
+                app.myplayer.feature.library.LibraryDetailViewModel(source, serverId, libraryId, smb) as T
+        },
+    )
+    val state by vm.state.collectAsStateWithLifecycle()
+
+    app.myplayer.feature.library.LibraryDetailScreen(
+        state = state,
+        sourceType = if (smb) {
+            app.myplayer.feature.library.home.HomeSourceType.SMB
+        } else {
+            app.myplayer.feature.library.home.HomeSourceType.EMBY
+        },
+        title = title,
+        loadImage = { item, kind -> vm.image(item, kind) },
+        onBack = onBack,
+        onOpenDetail = onOpenDetail,
+        // SMB 视频没有条目 id，播放器拿路径当 id（source:smb 接入后走本地播放链路）
+        onPlayPath = onPlay,
+        onLongPress = vm::longPressSelect,
+        onToggleSelect = vm::toggleSelect,
+        onExitSelection = vm::exitSelection,
+        onSelectAll = vm::selectAll,
+        onMarkWatched = vm::markWatched,
+        onApplyFilter = vm::applyFilter,
+    )
+}
+
 @Composable
 internal fun HomeDestination(
     serverId: String,
@@ -612,7 +738,9 @@ internal fun HomeDestination(
     onAddServer: () -> Unit,
     onPlay: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
-    onOpenLibrary: (app.myplayer.feature.library.home.HomeLibrarySection) -> Unit,
+    onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
+    /** 首页全关空态的「去设置开启」：切到设置 tab 并直接打开「首页设置」。 */
+    onGoToHomeSettings: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // 起始值用 null 而不是 emptyList()：DataStore 首帧还没读出来时不能当成「没有服务器」，
@@ -621,6 +749,14 @@ internal fun HomeDestination(
         configs.orEmpty().map { HomeServerOption(it.id, it.name, it.baseUrl) }
     }
     val serverName = servers.firstOrNull { it.id == serverId }?.name
+
+    // 首页形态跟着「当前服务器是什么源」走：
+    // · 文件类（LOCAL，未来的 SMB）→ 文件夹形态（顶层非空文件夹即分类）
+    // · 其余（Emby / Jellyfin / 飞牛）→ 媒体库形态
+    val homeSourceType = when (configs?.firstOrNull { it.id == serverId }?.sourceType) {
+        app.myplayer.core.model.SourceType.LOCAL -> HomeSourceType.SMB
+        else -> HomeSourceType.EMBY
+    }
 
     // 数据源跟着 source 走：改端点 / 重新登录后 source 是新实例，旧的地址与令牌都不能再用
     val data: HomeDataSource = remember(source, serverName) {
@@ -633,7 +769,13 @@ internal fun HomeDestination(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                HomeViewModel(serverId, servers, data) as T
+                HomeViewModel(
+                    serverId,
+                    servers,
+                    data,
+                    // 首页设置：与设置页「首页设置」共用同一份 DataStore（实时联动）
+                    app.myplayer.feature.library.home.HomeSettingsRepository(settingsStore),
+                ) as T
         },
     )
     LaunchedEffect(data) { vm.rebind(data) }
@@ -643,6 +785,7 @@ internal fun HomeDestination(
         state = state.copy(
             // 配置还没读出来时继续显示骨架屏，别让空态抢在数据前面
             isLoading = state.isLoading || configs == null,
+            sourceType = homeSourceType,
             servers = servers,
             selectedServerId = serverId,
             serverName = serverName ?: state.serverName,
@@ -655,7 +798,8 @@ internal fun HomeDestination(
         onAddServer = onAddServer,
         onPlay = { item -> onPlay(item.id) },
         onOpenDetail = { item -> onOpenDetail(item.id) },
-        onSeeAllLibrary = { section -> onOpenLibrary(section) },
+        onOpenLibrary = onOpenLibrary,
+        onGoToHomeSettings = onGoToHomeSettings,
     )
 }
 
@@ -666,7 +810,6 @@ internal fun SearchDestination(
     serverId: String,
     caps: ClientCapabilities,
     localThumbnails: Boolean,
-    onPlay: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -689,9 +832,14 @@ internal fun SearchDestination(
         onSubmit = { vm.rememberQuery() },
         onSelectRecent = vm::selectRecent,
         onClear = vm::clearQuery,
+        onClearHistory = vm::clearRecent,
+        onToggleHistoryExpanded = vm::toggleHistoryExpanded,
         loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
-        onPlay = { item -> onPlay(item.id) },
-        onOpenDetail = { item -> onOpenDetail(item.id) },
+        // 实时搜索下用户通常不按回车，直接把「点开结果」作为有效搜索的完成信号写入历史
+        onOpenDetail = { item ->
+            vm.rememberQuery()
+            onOpenDetail(item.id)
+        },
     )
 }
 
@@ -797,5 +945,6 @@ private fun OpaqueScreen(content: @Composable () -> Unit) {
 
 /** 设置子导航的三个路由（tab 根页 + 两个二级页）。 */
 private const val SUB_ROUTE_LIST = "list"
+private const val SUB_ROUTE_HOME = "home"
 private const val SUB_ROUTE_SUBTITLE = "subtitle"
 private const val SUB_ROUTE_ABOUT = "about"

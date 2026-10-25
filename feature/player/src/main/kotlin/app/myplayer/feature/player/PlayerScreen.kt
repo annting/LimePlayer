@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,8 +123,19 @@ fun PlayerScreen(
     modifier: Modifier = Modifier,
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     keepBackgroundPlayback: Boolean = false,
+    /**
+     * 应用锁是否开启（设置 → 隐私）。
+     *
+     * 只影响一件事：**解锁回到前台时要不要自动续播**。
+     * 开启 → 停在暂停帧等用户手动点播放；关闭 → 维持老的"回前台自动续播"。
+     */
+    appLockEnabled: Boolean = false,
     /** 设置页「画面 · 方向」：AUTO / 横屏 / 竖屏。播放页的按钮只做本次会话的临时覆盖。 */
     defaultOrientation: PlayerOrientation = PlayerOrientation.AUTO,
+    /** 设置页「播放 · 双击快进」：双击画面左/右两侧的跳转时长（ms）。 */
+    doubleTapSeekMs: Long = DOUBLE_TAP_SEEK_MS,
+    /** 设置页「字幕设置」：字号 / 颜色 / 描边 / 位置。 */
+    subtitleStyle: PlayerSubtitleStyle = PlayerSubtitleStyle(),
     /** 是否处于画中画：PiP 里必须取消假横屏，否则小窗画面侧躺（策略 A）。 */
     inPictureInPicture: Boolean = false,
     /**
@@ -236,10 +248,16 @@ fun PlayerScreen(
     }
 
     // 回前台恢复：先解锁、再恢复（应用锁开启时，解锁完成才触发；幂等）
+    //
+    // 应用锁开启 → **只解标记、不自动起播**（用户 2026-10-25 反馈：解锁后视频自己开始播，
+    // 看不清画面就先动了）。应用锁关闭 → 保持老行为，回来就续播。
+    // 用 rememberUpdatedState 读开关：effect 的 key 不能放它，否则玩到一半改设置会重订阅、
+    // 重新收到一次 true 而误触发恢复。
     if (appUnlocked != null) {
+        val lockEnabled by rememberUpdatedState(appLockEnabled)
         LaunchedEffect(Unit) {
             appUnlocked.collect { unlocked ->
-                if (unlocked) vm.resumeFromBackground()
+                if (unlocked) vm.resumeFromBackground(autoResume = !lockEnabled)
             }
         }
     }
@@ -314,15 +332,23 @@ fun PlayerScreen(
                 factory = { ctx ->
                     androidx.media3.ui.SubtitleView(ctx).apply {
                         setApplyEmbeddedFontSizes(false)
-                        setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 16f)
-                        setBottomPaddingFraction(0.10f)
+                        applySubtitleStyle(this, subtitleStyle)
                     }
                 },
-                update = { view -> vm.attachSubtitleView(view) },
+                update = { view ->
+                    // 设置页改字号 / 颜色 / 位置 → 这里跟着重刷，字幕立即变（不用重进播放页）
+                    applySubtitleStyle(view, subtitleStyle)
+                    vm.attachSubtitleView(view)
+                },
                 modifier = Modifier.align(Alignment.Center).then(videoModifier),
             )
 
-        GestureLayer(vm = vm, locked = state.locked, onIndicator = { indicator = it })
+        GestureLayer(
+            vm = vm,
+            locked = state.locked,
+            doubleTapSeekMs = doubleTapSeekMs,
+            onIndicator = { indicator = it },
+        )
 
         // 缓冲指示放到控制层**之上**（见下方），此处不再重复绘制
 
@@ -358,6 +384,7 @@ fun PlayerScreen(
                 onEnterPip = { context.findActivity()?.let { act -> enterPip(act, state) } },
                 onOpenSheet = vm::openSheet,
                 pipSupported = pipSupported,
+                doubleTapSeekMs = doubleTapSeekMs,
                 landscape = landscapeNow,
                 onToggleRotate = {
                     // 切到当前方向的反面；设备转到位后这次锁定会自动释放（见方向段的 LaunchedEffect）
@@ -507,6 +534,8 @@ private data class SystemIndicator(val kind: Kind, val value: Float) {
 private fun GestureLayer(
     vm: PlayerViewModel,
     locked: Boolean,
+    /** 「双击快进」步长（设置项）：双击左/右半屏各跳这么多毫秒。 */
+    doubleTapSeekMs: Long,
     onIndicator: (SystemIndicator?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -536,8 +565,8 @@ private fun GestureLayer(
                         vm.notifyInteraction()
                     },
                     onDoubleTap = { offset ->
-                        if (offset.x < size.width / 2f) vm.seekByWithHint(-DOUBLE_TAP_SEEK_MS)
-                        else vm.seekByWithHint(DOUBLE_TAP_SEEK_MS)
+                        if (offset.x < size.width / 2f) vm.seekByWithHint(-doubleTapSeekMs)
+                        else vm.seekByWithHint(doubleTapSeekMs)
                     },
                 )
             }
@@ -769,6 +798,8 @@ private fun PlayerControls(
     onEnterPip: () -> Unit,
     onOpenSheet: () -> Unit,
     pipSupported: Boolean,
+    /** 「双击快进」步长（设置项）：快退 / 快进按钮与控制层保持一致。 */
+    doubleTapSeekMs: Long,
     /**
      * 舞台当前是横屏版式：**系统横屏** 或 **内容转了 90°**，两者都算。
      * （不是「系统方向」也不是「按钮状态」—— 只有把两条路径合并，布局判断才一致）
@@ -954,7 +985,8 @@ private fun PlayerControls(
                 // 与其它图标**同时出现**：退场重叠已由「先解绑 SurfaceView + 无转场」解决，
                 // 不再需要等首帧就绪才显示（2026-10-19 用户反馈）。
                     PlayerIconButton(
-                        onClick = { vm.seekBy(-DOUBLE_TAP_SEEK_MS) },
+                        // 与控制层按钮共用「跳转时长」设置：用户调成 5 秒，按钮也应该走 5 秒
+                        onClick = { vm.seekBy(-doubleTapSeekMs) },
                         size = 36.dp,
                         background = Color.Transparent,
                     ) {
@@ -970,7 +1002,7 @@ private fun PlayerControls(
                         if (state.isPlaying) PauseIcon(tint = PlayerTokens.onMedia) else PlayIcon(tint = PlayerTokens.onMedia)
                     }
                     PlayerIconButton(
-                        onClick = { vm.seekBy(DOUBLE_TAP_SEEK_MS) },
+                        onClick = { vm.seekBy(doubleTapSeekMs) },
                         size = 36.dp,
                         background = Color.Transparent,
                     ) {
@@ -1438,3 +1470,37 @@ internal const val SEEK_FULL_WIDTH_MS = 90_000f
  */
 internal fun seekDeltaMs(dragPx: Float, widthPx: Float): Long =
     if (widthPx <= 0f) 0L else (dragPx / widthPx * SEEK_FULL_WIDTH_MS).toLong()
+
+/**
+ * 把「设置 → 字幕设置」应用到 media3 的 [androidx.media3.ui.SubtitleView]。
+ *
+ * 支持：字号、填充色、描边色、垂直位置。
+ * **描边粗细只能表达「有 / 无」**：`CaptionStyleCompat` 没有线宽参数（media3 内部固定），
+ * 所以 `outlineWidthDp > 0` 一律按系统标准描边渲染 —— 设置页那根滑杆目前只有「0 = 关」是精确的。
+ */
+private fun applySubtitleStyle(
+    view: androidx.media3.ui.SubtitleView,
+    style: PlayerSubtitleStyle,
+) {
+    view.setFixedTextSize(
+        android.util.TypedValue.COMPLEX_UNIT_SP,
+        style.fontSizeSp.coerceIn(10f, 40f),
+    )
+    // 设置里的 verticalPosition 是「字幕所在的高度比例」（0.9 = 靠下），
+    // SubtitleView 用的是「距底部的内边距比例」→ `1 - v` 正好互为镜像。
+    view.setBottomPaddingFraction((1f - style.verticalPosition).coerceIn(0f, 0.9f))
+    view.setStyle(
+        androidx.media3.ui.CaptionStyleCompat(
+            style.textColorArgb,
+            android.graphics.Color.TRANSPARENT,     // 背景
+            android.graphics.Color.TRANSPARENT,     // window 色
+            if (style.outlineWidthDp > 0.05f) {
+                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+            } else {
+                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
+            },
+            style.outlineColorArgb,
+            null,                                   // typeface：跟随系统
+        )
+    )
+}

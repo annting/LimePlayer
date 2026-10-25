@@ -2,6 +2,7 @@
 
 package app.myplayer.feature.library.home
 
+import app.myplayer.core.datastore.InMemorySettingsStore
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaLibrary
 import app.myplayer.core.model.SourceType
@@ -25,22 +26,28 @@ class HomeViewModelTest {
     @get:Rule
     val mainDispatcher = MainDispatcherRule(dispatcher)
 
+    private val settings = InMemorySettingsStore()
+
+    /** 统一构造：补上首页设置 repository（与本文件无关的旧用例零改动语义）。 */
+    private fun homeVm(data: MockHomeDataSource) =
+        HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, data, HomeSettingsRepository(settings))
+
     @Test
     fun `首屏加载完成后落数据并结束骨架屏`() {
-        val vm = HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, MockHomeDataSource(latencyMs = 0))
+        val vm = homeVm(MockHomeDataSource(latencyMs = 0))
         val state = vm.state.value
 
         assertThat(state.isLoading).isFalse()
         assertThat(state.error).isNull()
         assertThat(state.serverName).isEqualTo(MockHomeData.EMBY_NAME)
         assertThat(state.continueWatchingList).isNotEmpty()
-        assertThat(state.libraries).isNotEmpty()
+        assertThat(state.dynamicSections).isNotEmpty()
         assertThat(state.recentlyAddedList).isNotEmpty()
     }
 
     @Test
     fun `下拉刷新期间内容保留且 isRefreshing 为真`() {
-        val vm = HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, MockHomeDataSource(latencyMs = 100))
+        val vm = homeVm(MockHomeDataSource(latencyMs = 100))
         dispatcher.scheduler.advanceUntilIdle()
         assertThat(vm.state.value.isLoading).isFalse()
 
@@ -59,6 +66,7 @@ class HomeViewModelTest {
             MockHomeData.EMBY_ID,
             MockHomeData.servers,
             MockHomeDataSource(latencyMs = 0, failFor = setOf(MockHomeData.EMBY_ID)),
+            HomeSettingsRepository(settings),
         )
         val state = vm.state.value
 
@@ -72,8 +80,8 @@ class HomeViewModelTest {
 
     @Test
     fun `切换来源会换成另一台服务器的内容`() {
-        val vm = HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, MockHomeDataSource(latencyMs = 0))
-        val embyLibIds = vm.state.value.libraries.map { it.id }
+        val vm = homeVm(MockHomeDataSource(latencyMs = 0))
+        val embyLibIds = vm.state.value.dynamicSections.map { it.id }
         assertThat(embyLibIds).contains("lib-movie")
 
         vm.selectServer(MockHomeData.FNOS_ID)
@@ -81,13 +89,13 @@ class HomeViewModelTest {
 
         assertThat(vm.state.value.selectedServerId).isEqualTo(MockHomeData.FNOS_ID)
         assertThat(vm.state.value.serverName).isEqualTo(MockHomeData.FNOS_NAME)
-        assertThat(vm.state.value.libraries.map { it.id }).contains("fn-movie")
-        assertThat(vm.state.value.libraries.map { it.id }).doesNotContain("lib-movie")
+        assertThat(vm.state.value.dynamicSections.map { it.id }).contains("fn-movie")
+        assertThat(vm.state.value.dynamicSections.map { it.id }).doesNotContain("lib-movie")
     }
 
     @Test
     fun `重复选择同一台服务器不会重复建连`() {
-        val vm = HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, MockHomeDataSource(latencyMs = 0))
+        val vm = homeVm(MockHomeDataSource(latencyMs = 0))
         vm.selectServer(MockHomeData.EMBY_ID)
         // 没有触发 isLoading 说明直接 return 了
         assertThat(vm.state.value.isLoading).isFalse()
@@ -96,8 +104,8 @@ class HomeViewModelTest {
 
     @Test
     fun `数据源被换成新实例后重新取数`() {
-        val vm = HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, MockHomeDataSource(latencyMs = 0))
-        assertThat(vm.state.value.libraries).isNotEmpty()
+        val vm = homeVm(MockHomeDataSource(latencyMs = 0))
+        assertThat(vm.state.value.dynamicSections).isNotEmpty()
 
         // 重新登录 / 改端点后 source 会重建 → 旧实例绑的地址与令牌都不能再用
         vm.rebind(MockHomeDataSource(latencyMs = 0, failFor = setOf(MockHomeData.EMBY_ID)))
@@ -107,7 +115,7 @@ class HomeViewModelTest {
     @Test
     fun `同一个数据源实例 rebind 不触发重复请求`() {
         val data = MockHomeDataSource(latencyMs = 0)
-        val vm = HomeViewModel(MockHomeData.EMBY_ID, MockHomeData.servers, data)
+        val vm = homeVm(data)
 
         vm.rebind(data)
 
@@ -127,6 +135,7 @@ class HomeViewModelTest {
             MockHomeData.EMBY_ID,
             MockHomeData.servers,
             ServerHomeDataSource(source, "客厅 Emby"),
+            HomeSettingsRepository(settings),
         )
         dispatcher.scheduler.advanceUntilIdle()
         assertThat(source.libraryCalls).isEqualTo(1)
@@ -137,7 +146,7 @@ class HomeViewModelTest {
         // 没有第二次整屏取数，也没有回到骨架屏
         assertThat(source.libraryCalls).isEqualTo(1)
         assertThat(vm.state.value.isLoading).isFalse()
-        assertThat(vm.state.value.libraries.map { it.id }).containsExactly("lib-movie")
+        assertThat(vm.state.value.dynamicSections.map { it.id }).containsExactly("lib-movie")
     }
 
     @Test
@@ -150,6 +159,7 @@ class HomeViewModelTest {
             MockHomeData.EMBY_ID,
             MockHomeData.servers,
             ServerHomeDataSource(first, "客厅 Emby"),
+            HomeSettingsRepository(settings),
         )
         dispatcher.scheduler.advanceUntilIdle()
         assertThat(first.libraryCalls).isEqualTo(1)
@@ -163,7 +173,7 @@ class HomeViewModelTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertThat(second.libraryCalls).isEqualTo(1)
-        assertThat(vm.state.value.libraries.map { it.id }).containsExactly("lib-tv")
+        assertThat(vm.state.value.dynamicSections.map { it.id }).containsExactly("lib-tv")
     }
 
     /** 库横滑需要至少一个条目，否则 `ServerHomeDataSource` 会把空库过滤掉。 */

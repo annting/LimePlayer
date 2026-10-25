@@ -65,10 +65,15 @@ abstract class HttpMediaSource(
         return api.getResumeItems(userId, limit).map { mapItem(it, libraryId = null) }
     }
 
-    /** 首页「最近添加」：`/Items/Latest`（跨库、按入库时间倒序）。 */
+    /**
+     * 首页「最近添加」：走 `/Items` + `SortBy=DateCreated` 倒序（不再用 `/Items/Latest`）。
+     *
+     * `/Items/Latest` 实测会漏库（详见 [HttpMediaApi.getRecentlyAdded] 的注释），
+     * 而首页「最近添加」的按天过滤完全依赖 `dateCreated` —— 漏一条就等于整块空。
+     */
     override suspend fun getLatestItems(limit: Int): List<MediaItemDto> {
         val userId = api.config.userId ?: return emptyList()
-        return api.getLatestItems(userId, limit).map { mapItem(it, libraryId = null) }
+        return api.getRecentlyAdded(userId, limit).map { mapItem(it, libraryId = null) }
     }
 
     /**

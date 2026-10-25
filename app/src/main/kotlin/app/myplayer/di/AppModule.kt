@@ -77,7 +77,11 @@ object AppModule {
 
     @Provides @Singleton
     fun okHttpClient(policy: NetworkPolicy): OkHttpClient = HttpClientFactory.create(
-        NetworkConfig(extraInterceptors = listOf(cleartextGuard(policy)))
+        NetworkConfig(
+            extraInterceptors = listOf(cleartextGuard(policy)),
+            // 运行期读开关：设置页一改，下一次 TLS 握手就生效（不用重启 App）
+            trustSelfSignedProvider = { policy.trustSelfSignedCert },
+        )
     )
 
     /** 稳定的设备标识：Emby 用它区分会话，在重装之外保持稳定。 */

@@ -95,7 +95,14 @@ class HttpMediaApi(
         includePeople: Boolean = false,
     ): PagedResult<BaseItemDto> {
         val userId = requireNotNull(config.userId) { "登录后才能取条目" }
-        val fields = if (includePeople) "MediaSources,UserData,Genres,People" else "MediaSources,UserData,Genres"
+        // `DateCreated` 必须显式点名：Emby 的 `Fields` 是**白名单**，不写就真的不返回
+        // （实测：库里 7 条缓存条目的 dateCreated 全为 null，首页「最近添加」按天过滤后整块消失）。
+        // 详情页之所以一直有「添加日期」，是因为 `/Items/{id}` 走的是另一套完整投影。
+        val fields = if (includePeople) {
+            "MediaSources,UserData,Genres,People,DateCreated"
+        } else {
+            "MediaSources,UserData,Genres,DateCreated"
+        }
         val extra = buildMap<String, String> {
             put("Recursive", "true")
             put("IncludeItemTypes", types.joinToString(","))
@@ -127,7 +134,7 @@ class HttpMediaApi(
                             "Limit" to limit.toString(),
                             "MediaTypes" to "Video",
                             "Recursive" to "true",
-                            "Fields" to "MediaSources,UserData,Genres",
+                            "Fields" to "MediaSources,UserData,Genres,DateCreated",
                         ),
                     )
                 )
@@ -135,11 +142,12 @@ class HttpMediaApi(
         ).items
 
     /**
-     * 首页「最近添加」：`/Users/{userId}/Items/Latest`。
+     * `/Users/{userId}/Items/Latest`（**首页已弃用**，见下方 [getRecentlyAdded]）。
      *
      * ⚠️ 该端点返回的是**裸数组**（`BaseItemDto[]`），不是 `{Items,TotalRecordCount}` ——
      * 用 [ItemsResponseDto] 解析会直接抛序列化异常。`GroupItems=false` 避免服务端把
      * 同一部剧的多集合并成一条（否则「最近添加」里全是剧集首集）。
+     * 另一个坑：它会**漏库**（实测 5 个库只回 4 条，且全是老库），别拿来当「最近添加」的真源。
      */
     suspend fun getLatestItems(userId: String, limit: Int): List<BaseItemDto> =
         execute<List<BaseItemDto>>(
@@ -150,14 +158,44 @@ class HttpMediaApi(
                         mapOf(
                             "Limit" to limit.toString(),
                             "GroupItems" to "false",
-                            "Fields" to "MediaSources,UserData,Genres",
+                            // DateCreated：首页「最近添加」按天过滤的唯一依据，必须显式点名
+                            "Fields" to "MediaSources,UserData,Genres,DateCreated",
                         ),
                     )
                 )
                 .applyAuth().build()
         )
 
-    /** 详情查询：`Fields` 显式补 `Overview`（`05` §2.2：真机未下发时的兜底口径）。 */    suspend fun getItemDetail(itemId: String, userId: String): BaseItemDto =
+    /**
+     * 首页「最近添加」（**主路径**）：`/Users/{userId}/Items` + 按入库时间倒序。
+     *
+     * 为什么不用 `/Items/Latest`：实测（Emby 4.10 / 2026-10-24）它会**漏库** ——
+     * 5 个库只返回 4 条、全部来自两个老库，当天 01:49 刚入库的那个库一条都没有，
+     * 于是「最近添加」在 7 天窗口里永远是空的（用户报的 bug）。
+     * `/Items` + `SortBy=DateCreated&SortOrder=Descending` 语义等价且可预期。
+     */
+    suspend fun getRecentlyAdded(userId: String, limit: Int): List<BaseItemDto> =
+        execute<ItemsResponseDto>(
+            Request.Builder()
+                .url(
+                    url(
+                        "/Users/$userId/Items",
+                        mapOf(
+                            "Recursive" to "true",
+                            // 与 /Items/Latest 口径一致：非文件夹条目（剧集按「集」出，不按剧聚合）
+                            "IncludeItemTypes" to "Movie,Episode,Video",
+                            "SortBy" to "DateCreated",
+                            "SortOrder" to "Descending",
+                            "Fields" to "MediaSources,UserData,Genres,DateCreated",
+                            "Limit" to limit.toString(),
+                        ),
+                    )
+                )
+                .applyAuth().build()
+        ).items
+
+    /** 详情查询：`Fields` 显式补 `Overview`（`05` §2.2：真机未下发时的兜底口径）。 */
+    suspend fun getItemDetail(itemId: String, userId: String): BaseItemDto =
         execute(Request.Builder().url(url("/Users/$userId/Items/$itemId", mapOf("Fields" to "MediaSources,UserData,Genres,People,Overview"))).applyAuth().build())
 
     suspend fun getPlaybackInfo(itemId: String, userId: String, deviceProfileJson: String): PlaybackInfoResponseDto =

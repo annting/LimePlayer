@@ -94,6 +94,13 @@ object Dimens {
 
     /** 页面底部为悬浮导航预留的高度（导航 + 上下留白 + 手势条）。 */
     val navReserved = 60.dp + 16.dp + 16.dp
+
+    /**
+     * 模态确认弹窗的四周内边距（`AppConfirmDialog`）。
+     *
+     * M3 `AlertDialog` 是 24dp 起、且三段各带一份，短文案时显得很空 —— 收到 20dp 更紧凑。
+     */
+    val dialogPadding = 20.dp
 }
 
 /**

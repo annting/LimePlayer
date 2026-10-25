@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -17,19 +19,30 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
+import kotlinx.coroutines.delay
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import app.myplayer.core.datastore.AspectRatio
-import app.myplayer.core.datastore.LibraryDisplayMode
 import app.myplayer.core.datastore.PlayerSettings
 import app.myplayer.core.datastore.ScreenOrientation
 import app.myplayer.core.datastore.ServerConfig
@@ -95,10 +108,17 @@ fun SettingsScreen(
     onSearchTraditionalSimplified: (Boolean) -> Unit,
     onAllowCleartextHttp: (Boolean) -> Unit,
     onTrustSelfSignedCert: (Boolean) -> Unit,
-    onLibraryDisplayMode: (LibraryDisplayMode) -> Unit,
+    onHomeSettings: () -> Unit,
     onAbout: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * 首页「全关」空态的「去设置开启」：进设置列表后**自动滚动**到「首页」分组并高亮闪烁，
+     * 而不是直接进二级页 —— 用户可能只是想顺手打开某个模块，不必离开列表。
+     * 消费完由 [onHighlightHandled] 复位。
+     */
+    highlightHomeSettings: Boolean = false,
+    onHighlightHandled: () -> Unit = {},
 ) {
     val st = state.settings
 
@@ -107,8 +127,100 @@ fun SettingsScreen(
         // [onBack] 仍保留在签名里给 AppNavHost 复用，传 `null` 时 PageHeader 只渲染标题。
         PageHeader(title = "设置", subtitle = "改动即时生效", onBack = null)
 
+        val listState = rememberLazyListState()
+        // viewport 高度（px）：滚动定位用 —— 让目标分组停在垂直居中
+        var viewportHeightPx by remember { mutableStateOf(0) }
+        val schemeColor = MaterialTheme.colorScheme
+        // CompositionLocal 只能在 Composable 上下文取，effect 里按需换算成 px
+        val density = LocalDensity.current
+        val bottomNavSpace = LocalBottomNavSpace.current
+
+        // 「首页」分组在列表里的 index / 高度（列表结构静态 + 分组外观固定，扫一次存住；
+        // rememberSaveable：tab 切走再回来不丢，省掉重复扫描）
+        var homeGroupIndex by rememberSaveable { mutableStateOf(-1) }
+        var homeGroupHeightPx by rememberSaveable { mutableStateOf(0) }
+
+        // 「首页」分组的高亮闪烁：滚动到位 → 浅青柠绿 → 1 秒后渐回 surface
+        var homeGroupHighlighted by remember { mutableStateOf(false) }
+        val homeGroupColor by animateColorAsState(
+            targetValue = if (homeGroupHighlighted) {
+                schemeColor.primary.copy(alpha = 0.18f)
+            } else {
+                schemeColor.surface
+            },
+            animationSpec = tween(durationMillis = 500),
+            label = "homeGroupHighlight",
+        )
+
+        LaunchedEffect(highlightHomeSettings) {
+            if (!highlightHomeSettings) return@LaunchedEffect
+            delay(100)   // 等列表首帧渲染完（Crossfade 淡入进行中)
+
+            // ── ① 定位「首页」分组在列表里的 index / 高度（只扫描一次并缓存）──
+            // 扫描前记住用户当前看到的位置，扫完原样恢复 —— 都在 Crossfade 半透明期完成，用户无感。
+            //
+            // 两个坑（2026-10-24 第四版修复）：
+            //   a) 命中项必须用 `hit.index`，**不能**用循环变量 i：
+            //      视口一次能放下 3~4 个分组，`scrollToItem(i)` 之后「首页」往往已经在
+            //      layoutInfo 里了（比如 i=1 时它作为第 5 个可见项出现），于是会在
+            //      i != 真实 index 时提前命中 —— 上一版因此把它记成了 1（真实是 4）。
+            //   b) `animateScrollToItem(index, scrollOffset)` 的 scrollOffset 是
+            //      「目标项被推出视口**上方**的距离」，正数=往上推（推出屏幕），负数=往下推。
+            //      上一版直接传了 targetTop，等于把分组推到屏幕上方 949px 之外，落点全看
+            //      后面几个分组的高度 —— 所以每次落点都停在 1194，且看起来"擦着正确位置"。
+            if (homeGroupIndex < 0 || homeGroupHeightPx <= 0) {
+                val restoreIndex = listState.firstVisibleItemIndex
+                val restoreOffset = listState.firstVisibleItemScrollOffset
+                val totalItems = listState.layoutInfo.totalItemsCount
+                for (i in 0 until totalItems) {
+                    listState.scrollToItem(i)
+                    val hit = listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.key == HOME_GROUP_KEY }
+                    if (hit != null) {
+                        homeGroupIndex = hit.index     // ← 真实 index
+                        homeGroupHeightPx = hit.size
+                        break
+                    }
+                }
+                // 恢复用户切走前看到的位置（瞬移，用户感知不到）
+                listState.scrollToItem(restoreIndex, restoreOffset)
+            }
+
+            if (homeGroupIndex >= 0) {
+                // ── ② 把分组滚到「可视区（扣掉底部悬浮导航）的垂直居中」 ──
+                val bottomInsetPx = with(density) { bottomNavSpace.toPx() }
+                val targetTop = (((viewportHeightPx - bottomInsetPx - homeGroupHeightPx) / 2)
+                    .coerceAtLeast(0f))
+                    .roundToInt()
+                val curTop = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.key == HOME_GROUP_KEY }?.offset
+
+                // 已经在目标位置（容差 2px）→ 不再滚，只做高亮。
+                // 否则重复点「去设置开启」会看到列表在原地抖一下。
+                if (curTop == null || abs(curTop - targetTop) > 2) {
+                    listState.animateScrollToItem(homeGroupIndex, -targetTop)
+                    // 等一帧，确保动画后的测量结果已落地再校验
+                    withFrameNanos { }
+                    // 兜底：动画被中途打断（如用户顺手一划）时停在半路 → 直接补一次瞬移
+                    val afterTop = listState.layoutInfo.visibleItemsInfo
+                        .firstOrNull { it.key == HOME_GROUP_KEY }?.offset
+                    if (afterTop != null && abs(afterTop - targetTop) > 2) {
+                        listState.scrollToItem(homeGroupIndex, -targetTop)
+                    }
+                }
+            }
+
+            homeGroupHighlighted = true
+            delay(1000)
+            homeGroupHighlighted = false
+            onHighlightHandled()
+        }
+
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged { viewportHeightPx = it.height },
             contentPadding = PaddingValues(
                 start = Dimens.pagePadding,
                 end = Dimens.pagePadding,
@@ -138,12 +250,6 @@ fun SettingsScreen(
                         options = ThemeOptions,
                         selected = st.themeMode,
                         onSelect = onThemeMode,
-                    )
-                    SettingsMenuRow(
-                        title = "库展示方式",
-                        options = DisplayModeOptions,
-                        selected = st.libraryDisplayMode,
-                        onSelect = onLibraryDisplayMode,
                         showDivider = false,
                     )
                 }
@@ -196,6 +302,23 @@ fun SettingsScreen(
                         options = AspectOptions,
                         selected = st.defaultAspectRatio,
                         onSelect = onDefaultAspectRatio,
+                        showDivider = false,
+                    )
+                }
+            }
+
+            // ── 首页 ──
+            item(key = HOME_GROUP_KEY) {
+                SettingsGroup(
+                    title = "首页",
+                    containerColor = homeGroupColor,
+                ) {
+                    // 一级页只留入口：Emby / SMB 两套模块规则收进二级页，
+                    // 那里有「配置对象」切换，不用在主页平铺 8 个开关。
+                    SettingsNavRow(
+                        title = "首页设置",
+                        description = "按数据源配置各模块的显示规则",
+                        onClick = onHomeSettings,
                         showDivider = false,
                     )
                 }
@@ -480,13 +603,6 @@ private val ThemeOptions = listOf(
     SettingsOption(ThemeMode.DARK, "暗色"),
 )
 
-private val DisplayModeOptions = listOf(
-    SettingsOption(LibraryDisplayMode.AUTO, "自动"),
-    SettingsOption(LibraryDisplayMode.TABS, "页签"),
-    SettingsOption(LibraryDisplayMode.DRAWER, "抽屉"),
-    SettingsOption(LibraryDisplayMode.AGGREGATE, "聚合"),
-)
-
 private val SeekOptions = listOf(
     SettingsOption(5_000L, "5 秒"),
     SettingsOption(10_000L, "10 秒"),
@@ -578,7 +694,6 @@ private fun previewState(): SettingsUiState = SettingsUiState(
         localThumbnails = true,
         searchFuzzyPinyin = false,
         searchTraditionalSimplified = false,
-        libraryDisplayMode = LibraryDisplayMode.AUTO,
     ),
 )
 
@@ -599,6 +714,7 @@ private fun SettingsScreenPreviewContent(darkTheme: Boolean) {
             onScreenOrientation = {},
             onDefaultAspectRatio = {},
             onSubtitleSettings = {},
+            onHomeSettings = {},
             onAppLockEnabled = {},
             onUnlockGrace = {},
             onHideRecentsSnapshot = {},
@@ -607,7 +723,6 @@ private fun SettingsScreenPreviewContent(darkTheme: Boolean) {
             onSearchTraditionalSimplified = {},
             onAllowCleartextHttp = {},
             onTrustSelfSignedCert = {},
-            onLibraryDisplayMode = {},
             onAbout = {},
             onBack = {},
         )
@@ -627,3 +742,6 @@ private fun SettingsScreenDarkPreview() {
 private fun SettingsScreenLightPreview() {
     SettingsScreenPreviewContent(darkTheme = false)
 }
+
+private const val HOME_GROUP_KEY = "home-group"
+
