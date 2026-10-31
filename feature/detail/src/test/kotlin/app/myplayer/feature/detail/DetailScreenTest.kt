@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -179,7 +180,8 @@ class DetailScreenTest {
     @Test
     fun `canMarkPlayed 为 false 时不渲染标记已播放`() {
         setContent(DetailUiState.Content(movie()))
-        compose.onNodeWithText("标记已播放").assertDoesNotExist()
+        compose.onNodeWithContentDescription("标记已播放").assertDoesNotExist()
+        compose.onNodeWithContentDescription("取消已播放").assertDoesNotExist()
     }
 
     @Test
@@ -190,8 +192,9 @@ class DetailScreenTest {
             canMarkPlayed = true,
             onMarkPlayed = { requested = it },
         )
-        compose.onNodeWithText("标记已播放").assertIsDisplayed()
-        compose.onNodeWithText("标记已播放").performClick()
+        // 未播放 → 空心对勾（contentDescription「标记已播放」）
+        compose.onNodeWithContentDescription("标记已播放").assertIsDisplayed()
+        compose.onNodeWithContentDescription("标记已播放").performClick()
         assertThat(requested).isTrue()
     }
 
@@ -200,11 +203,8 @@ class DetailScreenTest {
     fun `canDelete 为 true 时删除按钮经确认弹窗回调`() {
         var deleted = false
         setContent(DetailUiState.Content(movie(canDelete = true)), onDelete = { deleted = true })
-        // 按钮在页面末尾，先滚动到位再点（测试视口小于页面高度）
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("删除该条目"))
-        compose.waitForIdle()
-        compose.onNodeWithText("删除该条目").assertIsDisplayed()
-        compose.onNodeWithText("删除该条目").performClick()
+        compose.onNodeWithContentDescription("删除").assertIsDisplayed()
+        compose.onNodeWithContentDescription("删除").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("删除条目").assertIsDisplayed()   // 弹窗标题
         compose.onNodeWithText("删除").performClick()           // 弹窗确认按钮（精确匹配）
@@ -214,7 +214,7 @@ class DetailScreenTest {
     @Test
     fun `canDelete 为 false 时不渲染删除按钮`() {
         setContent(DetailUiState.Content(movie(canDelete = false)))
-        compose.onNodeWithText("删除该条目").assertDoesNotExist()
+        compose.onNodeWithContentDescription("删除").assertDoesNotExist()
     }
 
     /** 有结构化 people 时渲染头像网格（姓名 + 角色），点击回调人物 id。 */

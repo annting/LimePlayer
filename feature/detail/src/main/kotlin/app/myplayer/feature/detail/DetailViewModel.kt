@@ -26,6 +26,13 @@ class DetailViewModel(
     private val itemId: String,
     private val onUserDataChanged: suspend (serverId: String, itemId: String, userData: UserData) -> Unit = { _, _, _ -> },
     private val onDeleted: (MediaItemDto) -> Unit = {},
+    /**
+     * 档二库存（2026-10-29）：SMB/LOCAL 的「设为隐私 / 取消隐私」写这里。
+     * null = 未接（Emby 系走档一、或预览/单测）→ 隐私按钮不渲染。
+     */
+    private val catalog: app.myplayer.core.model.FileCatalogStore? = null,
+    /** 是否处于隐私模式：只在隐私模式内提供隐私开关（普通模式下私有内容本来就不可见）。 */
+    private val privacyActive: Boolean = false,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow<DetailUiState>(DetailUiState.Loading)
@@ -50,7 +57,11 @@ class DetailViewModel(
                     ?.let { runCatching { source.getEpisodes(it) }.getOrDefault(emptyList()) }
                     .orEmpty()
                     .groupBySeason()
-                _state.value = DetailUiState.Content(item, seasons)
+                _state.value = DetailUiState.Content(item, seasons, isPrivate = readPrivate(item))
+                // 没有元数据服务的源（SMB / 本地文件）：现场读文件头补「视频 / 音频 / 字幕信息」。
+                // 刻意放在 Content **之后** —— 首屏先把标题和按钮画出来，轨道信息晚几百毫秒到达即可，
+                // 不能让整页为了这几个字段转圈（探测要连 SMB 读容器头）。
+                if (item.mediaStreams.isEmpty()) loadProbeInfo(item)
             }
             .onFailure { e ->
                 android.util.Log.w("LimeDetail", "详情加载失败 $itemId", e)
@@ -59,6 +70,26 @@ class DetailViewModel(
                     _state.value = DetailUiState.Error(e.message ?: "加载失败，请检查网络后重试")
                 }
             }
+    }
+
+    /**
+     * 探测成功后就地补进当前条目。
+     *
+     * 三个防御：探测失败（容器不支持）/ 页面已换成别的条目 / 状态已不是 Content —— 都安静退出，
+     * 详情页表现为「没有技术信息分区」，与探测能力上线前一致。
+     */
+    private suspend fun loadProbeInfo(item: MediaItemDto) {
+        val probe = runCatching { source.probeMedia(item) }.getOrNull() ?: return
+        val current = _state.value as? DetailUiState.Content ?: return
+        if (current.item.id != item.id) return
+        _state.value = current.copy(
+            item = current.item.copy(
+                mediaStreams = probe.streams,
+                // 条目时长对 SMB 恒为 0（列表接口不读文件头）→ 用探测值补上，
+                // 详情页「时长」行和续播进度条才有得算
+                durationTicks = probe.durationTicks.takeIf { it.value > 0 } ?: current.item.durationTicks,
+            ),
+        )
     }
 
     /** 标记 / 取消「已播放」。失败仅提示，不改本地状态。 */
@@ -86,6 +117,35 @@ class DetailViewModel(
             .onFailure { e ->
                 android.util.Log.w("LimeDetail", "删除条目失败 $itemId", e)
                 _userMessage.value = e.message ?: "删除失败，请稍后重试"
+            }
+    }
+
+    /** 当前条目的档二隐私态；不支持（null）时详情页不渲染隐私按钮。 */
+    private suspend fun readPrivate(item: MediaItemDto): Boolean? {
+        val path = item.path ?: return null
+        val store = catalog ?: return null
+        if (!privacyActive) return null
+        return runCatching { store.entryOf(source.serverId, path)?.isPrivate }.getOrNull()
+    }
+
+    /**
+     * 设为 / 取消隐私（档二，仅 SMB/LOCAL）。成功后就地翻状态，卡片标志与列表
+     * 过滤都由库存驱动（下次刷新生效）。
+     */
+    fun togglePrivate() = viewModelScope.launch {
+        val current = _state.value as? DetailUiState.Content ?: return@launch
+        val path = current.item.path ?: return@launch
+        val store = catalog ?: return@launch
+        val target = !(current.isPrivate == true)
+        runCatching { store.setPrivate(source.serverId, listOf(path), target) }
+            .onSuccess {
+                (_state.value as? DetailUiState.Content)?.let { c ->
+                    _state.value = c.copy(isPrivate = target)
+                }
+            }
+            .onFailure { e ->
+                android.util.Log.w("LimeDetail", "标记隐私失败 $itemId", e)
+                _userMessage.value = "操作失败，请稍后重试"
             }
     }
 }

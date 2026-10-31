@@ -45,9 +45,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import app.myplayer.core.designsystem.AppRadius
 import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.Dimens
-import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.Spacing
 import app.myplayer.core.designsystem.components.BackIcon
+import app.myplayer.core.designsystem.components.CircleIconButton
 import app.myplayer.core.designsystem.components.EmptyState
 import app.myplayer.core.model.CastMember
 import app.myplayer.core.model.ImageKind
@@ -133,7 +133,18 @@ fun PersonScreen(
     onItemClick: (MediaItemDto) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // 顶栏：返回键常驻（Loading/Empty/Content 三态都能返回），不再悬浮压头像（BUG-1）
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 4.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircleIconButton(onClick = onBack) {
+                BackIcon(tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
+        }
         when (state) {
             PersonUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -166,19 +177,6 @@ fun PersonScreen(
                     }
                 }
             }
-        }
-        // 返回键常驻
-        Box(
-            Modifier
-                .align(Alignment.TopStart)
-                .padding(12.dp)
-                .size(Dimens.iconButton)
-                .clip(AppShape.control)
-                .background(LocalAppColors.current.surface2)
-                .clickable(onClick = onBack),
-            contentAlignment = Alignment.Center,
-        ) {
-            BackIcon(tint = MaterialTheme.colorScheme.onSurface)
         }
     }
 }

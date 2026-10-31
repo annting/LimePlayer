@@ -53,8 +53,12 @@ class DetailViewModelTest {
         var detailError: Throwable? = null,
         var episodes: List<MediaItemDto> = emptyList(),
         var episodesError: Throwable? = null,
+        /** 现场探测的返回值（SMB 等无元数据源）；null = 探测不到。 */
+        var probe: app.myplayer.core.model.MediaProbeInfo? = null,
     ) : MediaSource {
         var episodeCalls = 0
+            private set
+        var probeCalls = 0
             private set
 
         // 写操作桩（`02` §5.1）
@@ -78,6 +82,13 @@ class DetailViewModelTest {
         override suspend fun planPlayback(item: MediaItemDto, caps: ClientCapabilities): PlaybackPlan = error("unused")
         override suspend fun getTrickplay(item: MediaItemDto, width: Int): TrickplaySpec? = null
         override suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState) = Unit
+
+        override suspend fun probeMedia(
+            item: MediaItemDto,
+        ): app.myplayer.core.model.MediaProbeInfo? {
+            probeCalls++
+            return probe
+        }
         override suspend fun getEpisodes(seriesId: String): List<MediaItemDto> {
             episodeCalls++
             episodesError?.let { throw it }
@@ -97,8 +108,7 @@ class DetailViewModelTest {
         }
     }
 
-    @Test fun `电影不拉分集且直接进入内容态`() = runTest {
-        val source = FakeSource(detail = item())
+    @Test fun `电影不拉分集且直接进入内容态`() = runTest {        val source = FakeSource(detail = item())
         val vm = DetailViewModel(source, "i1")
         vm.load()
 
@@ -233,5 +243,57 @@ class DetailViewModelTest {
         vm.delete()
         assertThat(deleted).isEqualTo(0)
         assertThat(vm.userMessage.value).isEqualTo("该源不支持删除")
+    }
+
+    /**
+     * SMB 这类没有元数据服务的源：详情页先出内容，再由探测结果补「视频 / 音频信息」和时长。
+     * 这是用户 2026-10-26 反馈「SMB 详情没有视频/音频信息」的修复点。
+     */
+    @Test fun `缺技术信息的条目用探测结果补齐`() = runTest {
+        val source = FakeSource(
+            detail = item().copy(durationTicks = Ticks.ZERO),
+            probe = app.myplayer.core.model.MediaProbeInfo(
+                streams = listOf(
+                    app.myplayer.core.model.MediaStreamInfo(
+                        kind = app.myplayer.core.model.StreamKind.VIDEO,
+                        codec = "h264",
+                        width = 1920,
+                        height = 1080,
+                        frameRate = 30f,
+                    ),
+                    app.myplayer.core.model.MediaStreamInfo(
+                        kind = app.myplayer.core.model.StreamKind.AUDIO,
+                        codec = "aac",
+                        channels = 2,
+                        sampleRate = 48000,
+                    ),
+                ),
+                durationTicks = Ticks.ofSeconds(90),
+            ),
+        )
+        val vm = DetailViewModel(source, "i1")
+        vm.load()
+
+        val content = vm.state.value as DetailUiState.Content
+        assertThat(source.probeCalls).isEqualTo(1)
+        assertThat(content.item.mediaStreams).hasSize(2)
+        assertThat(content.item.mediaStreams.first().codec).isEqualTo("h264")
+        assertThat(content.item.mediaStreams[0].width).isEqualTo(1920)
+        // 列表接口拿不到时长 → 用探测值补，详情页「时长」行与续播进度条才有得算
+        assertThat(content.item.durationTicks).isEqualTo(Ticks.ofSeconds(90))
+    }
+
+    /** 源自己已经下发 `mediaStreams`（Emby / Jellyfin / 飞牛）：绝不能再探一次（会白读一遍文件头）。 */
+    @Test fun `源已下发技术信息时不再探测`() = runTest {
+        val source = FakeSource(
+            detail = item().copy(
+                mediaStreams = listOf(app.myplayer.core.model.MediaStreamInfo(app.myplayer.core.model.StreamKind.AUDIO)),
+            ),
+        )
+        val vm = DetailViewModel(source, "i1")
+        vm.load()
+
+        assertThat(source.probeCalls).isEqualTo(0)
+        assertThat((vm.state.value as DetailUiState.Content).item.mediaStreams).hasSize(1)
     }
 }

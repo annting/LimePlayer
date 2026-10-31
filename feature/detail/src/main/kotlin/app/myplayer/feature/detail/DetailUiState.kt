@@ -17,6 +17,12 @@ sealed interface DetailUiState {
     data class Content(
         val item: MediaItemDto,
         val seasons: List<SeasonGroup> = emptyList(),
+        /**
+         * 档二隐私标记（2026-10-29）：
+         * - `null` = 该源不支持（非 SMB/LOCAL，或没接库存，或不在隐私模式）→ 详情页**不渲染**隐私按钮；
+         * - `true/false` = 当前是否私有 → 按钮显示「取消隐私 / 设为隐私」。
+         */
+        val isPrivate: Boolean? = null,
     ) : DetailUiState
 }
 

@@ -35,10 +35,23 @@ fun DetailRoute(
     onUserDataChanged: suspend (serverId: String, itemId: String, userData: UserData) -> Unit = { _, _, _ -> },
     onDeleted: (MediaItemDto) -> Unit = {},
     onPersonClick: (CastMember) -> Unit = {},
+    /** 档二库存（SMB/LOCAL 的隐私开关写这里）；null = 不支持 → 隐私按钮不渲染。 */
+    catalog: app.myplayer.core.model.FileCatalogStore? = null,
+    /** 是否处于隐私模式：普通模式下不提供隐私开关（私有内容本来就不可见）。 */
+    privacyActive: Boolean = false,
 ) {
     val vm: DetailViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { DetailViewModel(source, itemId, onUserDataChanged, onDeleted) }
+            initializer {
+                DetailViewModel(
+                    source = source,
+                    itemId = itemId,
+                    onUserDataChanged = onUserDataChanged,
+                    onDeleted = onDeleted,
+                    catalog = catalog,
+                    privacyActive = privacyActive,
+                )
+            }
         },
     )
     LaunchedEffect(itemId, source) { vm.load() }
@@ -58,5 +71,6 @@ fun DetailRoute(
         onPersonClick = onPersonClick,
         userMessage = userMessage,
         onMessageShown = { vm.consumeUserMessage() },
+        onTogglePrivate = { vm.togglePrivate() },
     )
 }
