@@ -31,6 +31,17 @@ interface MediaSource {
     suspend fun reportProgress(item: MediaItemDto, pos: Duration, state: PlayState)
 
     /**
+     * 现场探测媒体轨道（视频 / 音频 / 内嵌字幕流）+ 时长。
+     *
+     * 只有**没有元数据服务**的源需要实现：Emby / Jellyfin / 飞牛 在 DTO 里就带了 `mediaStreams`，
+     * 而 SMB 是纯文件共享，只能读文件头自己解析（实现见 `:source:smb` 的 `MediaExtractor`）。
+     * 默认 `null` = 该源不支持（详情页自动隐藏这几个分区，老实现无需改动）。
+     *
+     * ⚠️ **只在详情页调用**：探测要读文件头（MP4 还要跳到文件尾找 moov），放到起播链路会明显拖慢首帧。
+     */
+    suspend fun probeMedia(item: MediaItemDto): MediaProbeInfo? = null
+
+    /**
      * 直放失败时的**强制转码**重试（`03` §5.8 降级链）。
      * 返回 null 表示该源不支持（UI 直接进错误卡片）。默认不支持 —— 老实现无需改动。
      */
@@ -61,6 +72,14 @@ interface MediaSource {
      * **默认空**：不支持该端点的源返回空列表，首页退回只用各库的 `getItems()`。
      */
     suspend fun getLatestItems(limit: Int = 30): List<MediaItemDto> = emptyList()
+
+    /**
+     * 文件路径 → 详情页条目 id（观看历史页「点一条记录 → 进详情」用）。
+     *
+     * 只有**文件型源**（SMB / 本地）有真实的路径→id 映射；在线源的 id 不是路径，
+     * 返回默认 `null`（历史页对在线源本来就没有本地记录 —— 本地历史只来自文件型源）。
+     */
+    fun idForPath(path: String): String? = null
 
     /**
      * 写操作能力位：是否支持「标记已播放」（`02` §5.1）。UI 据此显隐按钮；

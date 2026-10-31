@@ -92,6 +92,15 @@ class SmbClient(val config: SmbConfig) {
         // 2 参构造器内部按「读共享」打开，不需要自己拼 sharing 位
         SmbRandomAccessFile(SmbFile(config.urlFor(path), context), "r")
 
+    /**
+     * 物理删除文件 / 目录（详情页「删除」；不经过回收站，不可恢复）。
+     * 不存在视为已删除（幂等）；权限不足 / 被占用时抛 SMB 异常，由调用方翻译成提示。
+     */
+    fun delete(path: String) {
+        val file = SmbFile(config.urlFor(path), context)
+        if (file.exists()) file.delete()
+    }
+
     /** 共享总字节数（首页/详情页统计用；失败返回 0）。 */
     fun totalBytes(path: String = ""): Long =
         runCatching { list(path).filterNot { it.isDirectory }.sumOf { it.sizeBytes } }.getOrDefault(0L)

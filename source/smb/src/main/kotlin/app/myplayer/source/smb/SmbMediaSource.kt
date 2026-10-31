@@ -17,7 +17,9 @@ import app.myplayer.core.model.PagedResult
 import app.myplayer.core.model.PlayState
 import app.myplayer.core.model.PlaybackPlan
 import app.myplayer.core.model.PlaybackProgress
+import app.myplayer.core.model.HidePrivate
 import app.myplayer.core.model.PlaybackStore
+import app.myplayer.core.model.PrivacyVisibilityPolicy
 import app.myplayer.core.model.ProbeState
 import app.myplayer.core.model.SourceType
 import app.myplayer.core.model.Ticks
@@ -61,6 +63,11 @@ class SmbMediaSource(
     override val serverId: String,
     private val progress: PlaybackStore? = null,
     private val catalog: FileCatalogStore? = null,
+    /**
+     * 档二可见性（`docs/隐私模式方案.md` §六）：**策略在实现方取值**，调用方拿不到开关。
+     * 默认 [HidePrivate] —— 漏装配时「少显示」而不是「漏数据」。
+     */
+    private val privacy: PrivacyVisibilityPolicy = HidePrivate,
 ) : MediaSource {
 
     override val type: SourceType = SourceType.SMB
@@ -68,8 +75,17 @@ class SmbMediaSource(
     private val client: SmbClient by lazy { SmbClients.of(config) }
 
     /** 第一个用到播放时才启动（避免只为列个目录就占一个端口）。 */
-    private val streamServer: SmbStreamServer by lazy {
+    private val streamServerDelegate = lazy {
         SmbStreamServer { path -> buildTarget(path) }.also { it.start() }
+    }
+    private val streamServer: SmbStreamServer get() = streamServerDelegate.value
+
+    /**
+     * 释放本机流代理端口（P1-5）：`streamServer.stop()` 此前从不被调用，增删 SMB 服务器会
+     * 累积 listen 端口 + daemon 线程。只在确实启动过（播过）时才 stop，避免 close 反而拉起 server。
+     */
+    fun close() {
+        if (streamServerDelegate.isInitialized()) streamServerDelegate.value.stop()
     }
 
     private fun buildTarget(path: String): SmbStreamServer.StreamTarget? {
@@ -102,18 +118,30 @@ class SmbMediaSource(
         libraryId?.removePrefix("smb:")?.takeIf { it.isNotBlank() && it != libraryId }
 
     override suspend fun getLibraries(): List<MediaLibrary> = withContext(Dispatchers.IO) {
-        client.list("")
-            .filter { it.isDirectory }
-            .map { entry ->
-                MediaLibrary(
-                    id = libraryIdOf(entry.path),
-                    name = entry.name,
-                    itemCount = runCatching {
-                        client.list(entry.path).count { !it.isDirectory && it.name.isVideoFile() }
-                    }.getOrNull(),
-                    collectionType = "folders",
-                )
+        val entries = client.list("").filter { it.isDirectory }
+        // 档二（目录级递归）：普通模式下把标了隐私的文件夹整个挡掉（首页「我的文件夹」卡片同源）
+        val hidden = if (!privacy.includePrivate()) {
+            runCatching { catalog?.privatePaths(serverId, entries.map { it.path }) }.getOrNull().orEmpty()
+        } else {
+            emptySet()
+        }
+        entries.filter { it.path !in hidden }.map { entry ->
+            val children = runCatching { client.list(entry.path) }.getOrDefault(emptyList())
+            // 计数也要递归排除：私有文件夹下的文件不能再被数进「N 个视频」
+            val deepHidden = if (!privacy.includePrivate() && catalog != null && children.isNotEmpty()) {
+                runCatching { catalog.privatePaths(serverId, children.map { it.path }) }.getOrNull().orEmpty()
+            } else {
+                emptySet()
             }
+            MediaLibrary(
+                id = libraryIdOf(entry.path),
+                name = entry.name,
+                itemCount = children
+                    .filter { it.path !in deepHidden }
+                    .count { !it.isDirectory && it.name.isVideoFile() },
+                collectionType = "folders",
+            )
+        }
     }
 
     override suspend fun getItems(query: ItemQuery): PagedResult<MediaItemDto> = withContext(Dispatchers.IO) {
@@ -121,7 +149,11 @@ class SmbMediaSource(
         val entries = runCatching { client.list(folder) }.getOrDefault(emptyList())
             .filter { !it.isDirectory && it.name.isVideoFile() }
         val meta = registerAndLoad(entries, folder)
-        val items = entries.map { it.toDto(folder, meta.entries[it.path], meta.progress[it.path]) }
+        // 档二：普通模式下把标了隐私的文件挡在目录列表外（否则「标了隐私还在文件夹里躺着」）
+        val hidden = hiddenPaths(entries.map { it.path })
+        val items = entries
+            .filter { it.path !in hidden }
+            .map { it.toDto(folder, meta.entries[it.path], meta.progress[it.path]) }
         PagedResult(items = items, totalCount = items.size, startIndex = 0)
     }
 
@@ -186,7 +218,14 @@ class SmbMediaSource(
         path = path,
         libraryId = folder.takeIf { it.isNotBlank() }?.let(::libraryIdOf),
         // 入库的探测结果：列表页的进度条（resumeFraction）依赖时长，不填就画不出来（F5）
-        durationTicks = cached?.durationMs?.let { Ticks.ofMillis(it) } ?: Ticks.ZERO,
+        // 时长兜底顺序 = 探测值 → **本地断点里的时长**：
+        // `probeMedia` 只在详情页触发，直接在网格里点播放、从不进详情页的片子永远没有探测时长，
+        // 于是 `resumeFraction()` 恒为 0、媒体库看不到进度条（2026-10-31 定位）。
+        // 断点里的 durationMs 是播放层写的（起播时 ExoPlayer 已知总长），足够算比例。
+        durationTicks = (cached?.durationMs ?: prog?.durationMs)
+            ?.takeIf { it > 0L }
+            ?.let { Ticks.ofMillis(it) }
+            ?: Ticks.ZERO,
         width = cached?.width,
         height = cached?.height,
         videoCodec = cached?.videoCodec,
@@ -198,6 +237,8 @@ class SmbMediaSource(
             resumePositionTicks = Ticks.ofMillis(prog?.positionMs ?: 0L),
         ),
         hasPoster = false,
+        // SMB 是文件本体：详情页/首页的删除走物理删除（MediaSource.deleteItem）
+        canDelete = true,
     )
 
     override suspend fun getItemDetail(id: String): MediaItemDto = withContext(Dispatchers.IO) {
@@ -288,7 +329,9 @@ class SmbMediaSource(
                 entries += meta.entries
                 prog += meta.progress
             }
-            all.map { it.toDto(it.path.substringBeforeLast('/', ""), entries[it.path], prog[it.path]) }
+            val hidden = hiddenPaths(all.map { it.path })
+            all.filter { it.path !in hidden }
+                .map { it.toDto(it.path.substringBeforeLast('/', ""), entries[it.path], prog[it.path]) }
         }.getOrDefault(emptyList())
     }
 
@@ -304,7 +347,20 @@ class SmbMediaSource(
         if (rows.isEmpty()) return@withContext emptyList()
         val entries = runCatching { catalog?.entriesOf(serverId, rows.map { it.mediaKey }) }
             .getOrNull().orEmpty()
-        rows.map { resumeDto(it, entries[it.mediaKey]) }
+        val hidden = hiddenPaths(rows.map { it.mediaKey })
+        rows.filter { it.mediaKey !in hidden }.map { resumeDto(it, entries[it.mediaKey]) }
+    }
+
+    /**
+     * 档二：这批路径里在当前模式下**要隐藏**的那些。
+     *
+     * 用 [FileCatalogStore.privatePaths] 而不是 `entriesOf` 里的 `isPrivate`：
+     * 后者按可见性策略过滤，普通模式下私有行根本查不出来，分不清「没入库」和「是隐私」。
+     * 隐私模式直接返回空集（全量可见），连这次查询都省掉。
+     */
+    private suspend fun hiddenPaths(paths: List<String>): Set<String> {
+        if (privacy.includePrivate() || paths.isEmpty()) return emptySet()
+        return runCatching { catalog?.privatePaths(serverId, paths) }.getOrNull().orEmpty()
     }
 
     /** 「继续观看」条目：库里只有 key，标题/时长靠库存行补；库存缺了就按文件名兜底。 */
@@ -330,6 +386,53 @@ class SmbMediaSource(
     )
 
     override suspend fun getAdjacentEpisodes(item: MediaItemDto): AdjacentEpisodes = AdjacentEpisodes()
+
+    /**
+     * 物理删除（`docs/隐私模式方案.md` §三）：SMB 没有服务端删除接口，
+     * 直接删共享上的文件（不经过回收站，调用方必须先确认过）。
+     *
+     * 成功后顺手清掉本地断点 —— 文件都没了，继续观看里不能再挂着它。
+     * 库存行（`file_media_items`）不清：下轮扫描 markMissing 自然标记（本期只标不删）。
+     */
+    override suspend fun deleteItem(item: MediaItemDto): Boolean = withContext(Dispatchers.IO) {
+        val path = item.path ?: decodeId(item.id)
+        runCatching { client.delete(path) }
+            .onSuccess { progress?.clear(serverId, path) }
+            .isSuccess
+    }
+
+    /**
+     * 「标记已播放」（2026-10-31）。SMB 没有服务端，状态写本地断点库 [progress]：
+     *
+     * - 标记已看 = 写一条 `completed = true` 的断点（按不变量位置清零，`playCount` +1）；
+     * - 取消已看 = 删掉断点，条目回到「未看过」（列表的 `isPlayed` 与进度条一起消失）。
+     *
+     * 能力位跟着 [progress] 走：没装配库（单测 / 预览）时保持默认 false，详情页不出对勾。
+     */
+    override val canMarkPlayed: Boolean get() = progress != null
+
+    override suspend fun markPlayed(item: MediaItemDto, played: Boolean): UserData =
+        withContext(Dispatchers.IO) {
+            val store = progress ?: throw UnsupportedOperationException("本地进度库未就绪")
+            val path = item.path ?: decodeId(item.id)
+            if (played) {
+                // 时长优先用条目自带的（详情页探测过就有），否则沿用库里旧值 ——
+                // 传 0 会把已有时长覆盖掉，之后这张卡的进度条就再也算不出来了。
+                val known = store.progressOf(serverId, path)?.durationMs ?: 0L
+                val durationMs = item.durationTicks.millis.takeIf { it > 0L } ?: known
+                store.recordPosition(
+                    sourceId = serverId,
+                    mediaKey = path,
+                    positionMs = 0L,
+                    durationMs = durationMs,
+                    completed = true,
+                )
+                UserData(isPlayed = true, resumePositionTicks = Ticks.ZERO)
+            } else {
+                store.clear(serverId, path)
+                UserData(isPlayed = false, resumePositionTicks = Ticks.ZERO)
+            }
+        }
 
     /**
      * 观看历史页「点一条记录 → 进详情」的路径→id 映射（`MediaSource.idForPath`）。
