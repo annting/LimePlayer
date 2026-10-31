@@ -39,6 +39,10 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -57,7 +61,6 @@ import app.myplayer.core.designsystem.Spacing
 import app.myplayer.core.designsystem.components.CircleIconButton
 import app.myplayer.core.designsystem.components.MoreVerticalIcon
 import app.myplayer.core.designsystem.components.PageHeader
-import app.myplayer.core.designsystem.components.ServerIcon
 import app.myplayer.core.designsystem.components.SettingsGroup
 import app.myplayer.core.designsystem.components.SettingsMenuRow
 import app.myplayer.core.designsystem.components.SettingsNavRow
@@ -112,6 +115,10 @@ fun SettingsScreen(
     onAbout: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 是否已录过解锁图案（`设置 → 隐私 → 解锁图案`）。没录过时应用锁不生效。 */
+    patternConfigured: Boolean = false,
+    /** 打开图案设置页（绘制 → 确认）。 */
+    onSetupPattern: () -> Unit = {},
     /**
      * 首页「全关」空态的「去设置开启」：进设置列表后**自动滚动**到「首页」分组并高亮闪烁，
      * 而不是直接进二级页 —— 用户可能只是想顺手打开某个模块，不必离开列表。
@@ -119,6 +126,9 @@ fun SettingsScreen(
      */
     highlightHomeSettings: Boolean = false,
     onHighlightHandled: () -> Unit = {},
+    /** 是否处于隐私模式：决定服务器行是否显示隐私标识与「移入隐私」。 */
+    privacyActive: Boolean = false,
+    onMoveToPrivacy: (String) -> Unit = {},
 ) {
     val st = state.settings
 
@@ -238,7 +248,18 @@ fun SettingsScreen(
                     onEdit = onEditServer,
                     onDelete = onDeleteServer,
                     onAdd = onAddServer,
+                    privacyActive = privacyActive,
+                    onMoveToPrivacy = onMoveToPrivacy,
                 )
+                // 迁移失败等一次性提示：直接跟在服务器分组下面，比 Toast 更容易被看见
+                state.notice?.let { notice ->
+                    Text(
+                        text = notice,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = schemeColor.error,
+                        modifier = Modifier.padding(start = 4.dp, top = 6.dp),
+                    )
+                }
             }
 
             // ── 外观 ──
@@ -345,7 +366,21 @@ fun SettingsScreen(
                         title = "应用锁",
                         description = "回到前台需要图案解锁",
                         checked = st.appLockEnabled,
-                        onCheckedChange = onAppLockEnabled,
+                        // 打开开关但还没录图案 → 直接进设置页，否则开着锁却挡不住任何人
+                        onCheckedChange = { checked ->
+                            onAppLockEnabled(checked)
+                            if (checked && !patternConfigured) onSetupPattern()
+                        },
+                    )
+                    SettingsNavRow(
+                        title = "解锁图案",
+                        description = when {
+                            patternConfigured -> "点击重新绘制，需先验证当前图案"
+                            st.appLockEnabled -> "尚未设置，应用锁目前不生效"
+                            else -> "设置后应用锁才会生效"
+                        },
+                        value = if (patternConfigured) "已设置" else "未设置",
+                        onClick = onSetupPattern,
                     )
                     if (st.appLockEnabled) {
                         SettingsMenuRow(
@@ -445,6 +480,8 @@ private fun ServerGroup(
     onEdit: (String) -> Unit,
     onDelete: (String) -> Unit,
     onAdd: () -> Unit,
+    privacyActive: Boolean = false,
+    onMoveToPrivacy: (String) -> Unit = {},
 ) {
     val scheme = MaterialTheme.colorScheme
     var pendingDelete by remember { mutableStateOf<ServerRow?>(null) }
@@ -462,6 +499,8 @@ private fun ServerGroup(
                 onSetActive = onSetActive,
                 onEdit = { onEdit(row.config.id) },
                 onRequestDelete = { pendingDelete = row },
+                privacyActive = privacyActive,
+                onMoveToPrivacy = { onMoveToPrivacy(row.config.id) },
             )
         }
         SettingsNavRow(
@@ -503,6 +542,8 @@ private fun ServerRowItem(
     onSetActive: (String) -> Unit,
     onEdit: () -> Unit,
     onRequestDelete: () -> Unit,
+    privacyActive: Boolean = false,
+    onMoveToPrivacy: () -> Unit = {},
 ) {
     val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
@@ -517,13 +558,22 @@ private fun ServerRowItem(
             title = row.config.name,
             description = "$host · ${row.config.sourceType.name.lowercase()}",
             onClick = { if (!row.active) onSetActive(row.config.id) },
-            leading = {
-                ServerIcon(
-                    tint = if (row.active) scheme.primary else app.text3,
-                    modifier = Modifier.size(20.dp),
-                )
-            },
+            // 不再放 leading 图标：同组的「添加服务器」没有图标，带图标那一行的文字会比它
+            // 右移 32dp（20 图标 + 12 间距），左对齐会断。组内要么都有、要么都没有 —— 选「都没有」。
             trailing = {
+                if (row.config.isPrivate) {
+                    // 隐私源标识：只在隐私模式下才可能看到这一行，标出来是为了避免误操作
+                    Text(
+                        text = "隐私",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = app.text3,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(app.surface2)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    )
+                    Spacer(Modifier.width(Spacing.sm.dp))
+                }
                 if (row.active) {
                     Text(
                         text = "当前",
@@ -531,7 +581,7 @@ private fun ServerRowItem(
                         fontWeight = FontWeight.SemiBold,
                         color = scheme.primary,
                     )
-                    Spacer(Modifier.width(Spacing.xs.dp))
+                    Spacer(Modifier.width(Spacing.sm.dp))
                 }
                 CircleIconButton(onClick = { menuOpen = true }) {
                     MoreVerticalIcon(tint = app.text3, modifier = Modifier.size(18.dp))
@@ -577,6 +627,22 @@ private fun ServerRowItem(
                     onSetActive(row.config.id)
                 },
             )
+            if (privacyActive && !row.config.isPrivate) {
+                HorizontalDivider(color = app.border)
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "移入隐私",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = scheme.onSurface,
+                        )
+                    },
+                    onClick = {
+                        menuOpen = false
+                        onMoveToPrivacy()
+                    },
+                )
+            }
             HorizontalDivider(color = app.border)
             DropdownMenuItem(
                 text = {

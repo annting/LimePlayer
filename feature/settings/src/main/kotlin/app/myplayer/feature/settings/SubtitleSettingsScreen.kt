@@ -60,6 +60,7 @@ import app.myplayer.core.designsystem.components.PageHeader
 import app.myplayer.core.designsystem.components.SettingsDivider
 import app.myplayer.core.designsystem.components.SettingsGroup
 import app.myplayer.core.designsystem.components.SettingsRow
+import app.myplayer.core.designsystem.components.SettingsSwitchRow
 import kotlin.math.roundToInt
 
 /**
@@ -126,6 +127,16 @@ fun SubtitleSettingsScreen(
                 verticalPosition = verticalPosition,
             )
 
+            // 「默认使用字幕」：起播就开，播放页里还能随时关（用户 2026-10-26 需求）
+            SettingsGroup(title = "播放") {
+                SettingsSwitchRow(
+                    title = "默认使用字幕",
+                    description = "起播时自动开启第一条字幕轨；播放页仍可随时切换或关闭",
+                    checked = style.defaultEnabled,
+                    onCheckedChange = { on -> onStyleChange { it.copy(defaultEnabled = on) } },
+                )
+            }
+
             SettingsGroup(title = "文字样式") {
                 SubtitleSliderRow(
                     title = "字号",
@@ -154,6 +165,17 @@ fun SubtitleSettingsScreen(
                         commit()
                     },
                     showDivider = false,
+                )
+                // 卡片尾注：解释「0 描边还会画一层淡描边」，否则用户会以为设置没生效
+                Text(
+                    text = "描边调到 0 时，画面里仍会补一层淡描边 —— 纯色字幕压在浅色画面上会看不清。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = LocalAppColors.current.text3,
+                    modifier = Modifier.padding(
+                        start = Dimens.pagePadding,
+                        end = Dimens.rowEndInset,
+                        bottom = Spacing.md.dp,
+                    ),
                 )
             }
 
@@ -194,7 +216,15 @@ private fun SubtitlePreviewCard(
 ) {
     val app = LocalAppColors.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val outlinePx = with(density) { outlineWidth.dp.toPx() }
+    // 与播放页 SubtitleLayer 保持同一套兜底：0 描边时补一层淡描边，预览必须是「所见即所得」
+    val fallbackOutline = outlineWidth <= 0.05f
+    val effectiveOutline = if (fallbackOutline) PlayerTokens.SUBTITLE_FALLBACK_OUTLINE_DP else outlineWidth
+    val effectiveColor = if (fallbackOutline) {
+        outlineColor.copy(alpha = outlineColor.alpha * PlayerTokens.SUBTITLE_FALLBACK_OUTLINE_ALPHA)
+    } else {
+        outlineColor
+    }
+    val outlinePx = with(density) { effectiveOutline.dp.toPx() }
     val safePosition = verticalPosition.coerceIn(0.1f, 0.9f)
 
     Column(Modifier.fillMaxWidth()) {
@@ -254,7 +284,7 @@ private fun SubtitlePreviewCard(
                         Text(
                             text = PREVIEW_TEXT,
                             style = baseStyle.copy(
-                                color = outlineColor,
+                                color = effectiveColor,
                                 drawStyle = Stroke(
                                     width = outlinePx * 2f,
                                     join = StrokeJoin.Round,
