@@ -185,6 +185,18 @@ SMB 的直放地址 = 代理 URL → **抽帧自动生效，海报问题不花�
   代理侧要限流（同文件串行 + 全局并发上限）。真机验证「列表滚动抽帧是否跟手」列入 P1 验证清单，
   跟不上则退化为「仅详情页抽帧」。
 
+**实现状态（2026-10-25 已落地，OnePlus PKR110 真机验证）**
+
+| 项 | 落地情况 |
+|---|---|
+| 触发范围 | 首页「最近添加」/ 库横滑、媒体库详情网格（SMB 卡片）都走同一条 `loadImageWithFallback` |
+| 限流 | 同 item `Mutex` 串行 + 全局 `Semaphore(2)`；`LazyGrid/LazyRow` 只组合可见项，滚动时逐条抽 |
+| 缓存 | `cache/thumbs/<serverId>_<itemId>.jpg`；**失败写 0 字节文件做负缓存**，避免反复重试坏文件 |
+| 写盘 | 先写 `.part` 再改名，进程被杀不会留下半张图 |
+| 踩坑 1 | `MediaMetadataRetriever.setDataSource(url, headers)` **传 null 会 NPE**（内部直接 `headers.size()`）；SMB 无请求头，必须传 `emptyMap()` |
+| 踩坑 2 | 不要按扩展名预挡容器：OnePlus 的 AVI 能正常播放，但同一个文件 `setDataSource` 仍返回 `0x80000000` —— 能否抽帧只能试过才知道，靠负缓存兜底 |
+| 实测 | mp4 / webm 抽帧成功（40KB~350KB jpg）；avi 失败 → 卡片退回「视频图标」占位，不崩 |
+
 ---
 
 ## 3. SMB 客户端库选型（调研期验证）
