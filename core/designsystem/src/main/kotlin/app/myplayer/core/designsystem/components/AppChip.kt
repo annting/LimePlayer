@@ -71,29 +71,37 @@ fun AppChip(
         label = "chip-border",
     )
 
+    // 外层 = 48dp **触控热区**（规范 §5：可点元素 ≥ 48dp）；内层才是 32dp 的视觉 chip。
+    // 只放大热区、不放大视觉，才能同时满足「32dp 的细比例」和「48dp 的可点面积」。
     Box(
         modifier = modifier
-            .height(Dimens.chip)
-            .pressScale(interaction, pressedScale = 0.95f)
-            .clip(AppShape.control)
-            .background(background)
-            .border(if (selected) 1.5.dp else Dimens.hairline, borderColor, AppShape.control)
+            .height(Dimens.touchTarget)
             .clickable(
                 interactionSource = interaction,
                 indication = null,
                 enabled = enabled,
                 onClick = onClick,
-            )
-            .padding(horizontal = 12.dp)
-            .widthIn(min = 44.dp),
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = text,
-            color = content,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-        )
+        Box(
+            modifier = Modifier
+                .height(Dimens.chip)
+                .pressScale(interaction, pressedScale = 0.95f)
+                .clip(AppShape.control)
+                .background(background)
+                .border(if (selected) 1.5.dp else Dimens.hairline, borderColor, AppShape.control)
+                .padding(horizontal = 12.dp)
+                .widthIn(min = 44.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = text,
+                color = content,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
     }
 }

@@ -72,7 +72,10 @@ fun PageHeader(
 }
 
 /**
- * 图标按钮：40dp、圆角 8dp、按压缩放 0.95。
+ * 图标按钮：视觉 40dp、圆角 8dp、按压缩放 0.95，**触控热区 48dp**（规范 §5）。
+ *
+ * 外层 48dp 承担点击与热区，内层 40dp 负责视觉与缩放 —— 只放大热区、不放大视觉，
+ * 40dp 的比例才不会被破坏。`wrapContent` 语义不变：外层仍按内容居中，不影响父级对齐。
  *
  * [shape] 允许调用方覆盖（如玩家页需要圆形时传 `AppShape.circle`）。
  */
@@ -86,10 +89,16 @@ fun CircleIconButton(
     val interaction = remember { MutableInteractionSource() }
     Box(
         modifier = modifier
-            .size(Dimens.iconButton)
-            .pressScale(interaction, pressedScale = 0.95f)
-            .clip(shape)
+            .size(Dimens.touchTarget)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { content() }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(Dimens.iconButton)
+                .pressScale(interaction, pressedScale = 0.95f)
+                .clip(shape),
+            contentAlignment = Alignment.Center,
+        ) { content() }
+    }
 }

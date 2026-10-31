@@ -21,7 +21,7 @@ val MyTypography = Typography(
     bodySmall = TextStyle(fontSize = 12.5.sp, fontWeight = FontWeight.Normal),      // 次级正文
     labelMedium = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Medium),      // 字段 label / 按钮
     labelLarge = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium),       // 按钮文字
-    labelSmall = TextStyle(fontSize = 11.5.sp, fontWeight = FontWeight.Normal),     // 辅助说明
+    labelSmall = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal),    // 辅助说明（11.5→12：中文在 360dp 屏上偏小一号）
 )
 
 /** 时间码与数字统一等宽，避免播放时数字抖动。 */

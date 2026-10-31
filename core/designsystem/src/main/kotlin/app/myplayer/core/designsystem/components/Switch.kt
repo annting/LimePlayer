@@ -19,6 +19,12 @@ import app.myplayer.core.designsystem.LocalAppColors
  * - 关闭态：`text2` 圆点 + `surface3` 轨道 + `borderStrong` 描边 —— 圆点始终可见；
  * - 打开态：品牌色轨道 + `brandInk` 圆点（与主按钮同口径，对比度按 §2.1 保证）。
  *
+ * **亮色主题的关闭态单独处理（用户 2026-10-28 反馈）**：原来两套主题共用
+ * 「`text2` 圆点 + `surface3` 轨道」，在暗色下是对的（浅灰点 + 深轨道），
+ * 到亮色就变成「`#5A6472` 近黑圆点压在 `#E1E5EC` 浅轨道上」，整颗开关读起来很重。
+ * 亮色改为「白色圆点 + `borderStrong`(#C6CCD6) 轨道」：白点在白卡片上不会消失，
+ * 因为轨道比卡片暗一档（1.55:1），形状边界靠轨道本身给出，不再用深色圆点撑。
+ *
  * @param checked 当前状态
  * @param onCheckedChange 状态回调；传 `null` 表示只读展示
  */
@@ -31,6 +37,10 @@ fun AppSwitch(
 ) {
     val scheme = MaterialTheme.colorScheme
     val app = LocalAppColors.current
+    // 关闭态两套主题分开取值，理由见上方注释
+    val offThumbColor = if (app.isDark) scheme.onSurfaceVariant else Color.White
+    val offTrackColor = if (app.isDark) app.surface3 else app.borderStrong
+    val offBorderColor = app.borderStrong
 
     Switch(
         checked = checked,
@@ -44,15 +54,15 @@ fun AppSwitch(
             checkedBorderColor = scheme.primary,
             checkedIconColor = scheme.primary,
             // 关闭 —— 圆点必须比轨道亮/暗一档，否则会「消失」
-            uncheckedThumbColor = scheme.onSurfaceVariant,
-            uncheckedTrackColor = app.surface3,
-            uncheckedBorderColor = app.borderStrong,
-            uncheckedIconColor = app.surface3,
+            uncheckedThumbColor = offThumbColor,
+            uncheckedTrackColor = offTrackColor,
+            uncheckedBorderColor = offBorderColor,
+            uncheckedIconColor = offTrackColor,
             // 禁用
             disabledCheckedThumbColor = app.brandInk.copy(alpha = 0.72f),
             disabledCheckedTrackColor = scheme.primary.copy(alpha = 0.38f),
             disabledCheckedBorderColor = Color.Transparent,
-            disabledUncheckedThumbColor = app.text3.copy(alpha = 0.55f),
+            disabledUncheckedThumbColor = if (app.isDark) app.text3.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.72f),
             disabledUncheckedTrackColor = app.surface2,
             disabledUncheckedBorderColor = app.border,
             disabledUncheckedIconColor = app.surface2,

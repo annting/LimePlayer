@@ -7,7 +7,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
@@ -77,6 +80,15 @@ fun LockIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
     modifier = modifier.size(20.dp),
 )
 
+/** 观看历史入口（首页顶栏）与历史页标题。 */
+@Composable
+fun HistoryIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
+    imageVector = Icons.Filled.History,
+    contentDescription = null,
+    tint = tint,
+    modifier = modifier.size(20.dp),
+)
+
 @Composable
 fun GlobeIcon(tint: Color, modifier: Modifier = Modifier) {
     Canvas(modifier.size(18.dp)) {
@@ -131,6 +143,29 @@ fun CheckIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
     modifier = modifier.size(18.dp),
 )
 
+/** 删除（详情页操作行 / 确认弹窗）。 */
+@Composable
+fun DeleteIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
+    imageVector = Icons.Filled.Delete,
+    contentDescription = null,
+    tint = tint,
+    modifier = modifier.size(20.dp),
+)
+
+/**
+ * 警示图标（错误 / 警告状态行）。
+ *
+ * 用 Material 的 `ErrorOutline` 而不是自绘的 6dp 圆点：提示条上的 6dp 点在真机上
+ * 只像个脏点，撑不起「这里出错了」的语义（`flat-04-add-final.png` 实测）。
+ */
+@Composable
+fun AlertIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
+    imageVector = Icons.Filled.ErrorOutline,
+    contentDescription = null,
+    tint = tint,
+    modifier = modifier.size(18.dp),
+)
+
 // ---- 播放器图标 ----
 
 /** 播放（实心三角）。 */
@@ -141,6 +176,28 @@ fun PlayIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
     tint = tint,
     modifier = modifier.size(24.dp),
 )
+
+/** 视频文件（圆角矩形外框 + 居中播放三角），用于「无预览图」占位。 */
+@Composable
+fun VideoIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(24.dp)) {
+        val stroke = size.height / 11f
+        drawRoundRect(
+            color = tint,
+            topLeft = Offset(size.width * 0.1f, size.height * 0.2f),
+            size = Size(size.width * 0.8f, size.height * 0.6f),
+            cornerRadius = CornerRadius(size.height * 0.16f),
+            style = Stroke(width = stroke, join = StrokeJoin.Round),
+        )
+        val triangle = Path().apply {
+            moveTo(size.width * 0.44f, size.height * 0.38f)
+            lineTo(size.width * 0.62f, size.height * 0.5f)
+            lineTo(size.width * 0.44f, size.height * 0.62f)
+            close()
+        }
+        drawPath(triangle, tint)
+    }
+}
 
 /** 暂停（两条竖条）。 */
 @Composable

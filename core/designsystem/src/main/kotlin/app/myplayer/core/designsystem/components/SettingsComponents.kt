@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -35,6 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -156,9 +162,12 @@ fun SettingsRow(
                 .heightIn(min = Dimens.rowMinHeight)
                 .padding(
                     start = Dimens.pagePadding,
-                    end = Spacing.md.dp,
-                    top = 9.dp,
-                    bottom = 9.dp,
+                    // 右侧 12dp（不是 16dp）：chevron / 开关 / 眼睛都自带 2–4dp 光学留白，
+                    // 两侧都给 16dp 反而会显得右重左轻。token 见 Dimens.rowEndInset。
+                    end = Dimens.rowEndInset,
+                    // 8dp：56dp 行高由 heightIn 兜住，这里必须落在 8dp 网格上（旧值 9dp 是脏数据）
+                    top = Spacing.sm.dp,
+                    bottom = Spacing.sm.dp,
                 ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -363,15 +372,36 @@ fun SettingsInputRow(
     val scheme = MaterialTheme.colorScheme
     val app = LocalAppColors.current
     var passwordVisible by remember { mutableStateOf(false) }
+    // 聚焦态：靠输入框自己的 InteractionSource 观测（父级 onFocusChanged 拿不到子节点的焦点）
+    val textInteraction = remember { MutableInteractionSource() }
+    val focused by textInteraction.collectIsFocusedAsState()
 
     Column(modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // 聚焦高亮用 drawBehind 画「内缩 8dp 的 8dp 圆角块」：
+                // 布局完全不变（仍是 56dp 行），只是给空表单一个「这行能输入」的暗示。
+                // 不画边框、不画指示线 —— 那正是 UI 优化方案要去掉的东西。
+                .drawBehind {
+                    if (focused) {
+                        val inset = 8.dp.toPx()
+                        val vInset = 4.dp.toPx()
+                        drawRoundRect(
+                            color = app.surface2,
+                            topLeft = Offset(inset, vInset),
+                            size = Size(
+                                width = (size.width - inset * 2).coerceAtLeast(0f),
+                                height = (size.height - vInset * 2).coerceAtLeast(0f),
+                            ),
+                            cornerRadius = CornerRadius(8.dp.toPx()),
+                        )
+                    }
+                }
                 .heightIn(min = Dimens.rowMinHeight)
                 .padding(
                     start = Dimens.pagePadding,
-                    end = Spacing.md.dp,
+                    end = Dimens.rowEndInset,
                     top = 8.dp,
                     bottom = 8.dp,
                 ),
@@ -394,6 +424,8 @@ fun SettingsInputRow(
                 onValueChange = onValueChange,
                 modifier = Modifier.weight(1f),
                 enabled = enabled,
+                // 聚焦态高亮由这个 interactionSource 驱动（见 Row 的 drawBehind）
+                interactionSource = textInteraction,
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyMedium.copy(
                     color = if (enabled) scheme.onSurface else app.text3,

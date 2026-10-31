@@ -1,18 +1,14 @@
 package app.myplayer.core.designsystem.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -21,7 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -59,10 +54,15 @@ data class NavItemSpec(
  * 规格：
  * - 悬浮在内容上方 `16dp`，左右各 `16dp`，底部再让出手势条（[navigationBarsPadding]）；
  * - 形状 **999dp 胶囊**（全站唯一允许的胶囊）；底色 `surface` + 12dp 阴影 + 1dp 细描边；
- * - 选中项：背景变 `primary`，图标与文字变 `brandInk`，图标有一次 `1 → 1.16 → 1` 弹跳；
- * - 未选中项：只有图标，`onSurfaceVariant`。
+ * - 选中项：**图标与文字变 `primary` + 图标上方一枚 5dp 指示点**；未选中只降为 `onSurfaceVariant`；
+ * - 每个 tab 占等宽 1/4，**四项结构完全一致**（都是「指示点 + 图标 + 文字」三行）。
  *
- * 每个 tab 占等宽 1/4，选中胶囊在格内居中，**切换时其它项不会被挤着跑**。
+ * ## 为什么不再用「背景色块 + 展开文字」（UI 优化方案 L7）
+ * 老做法是选中项撑出一个 primary 色块、未选中项只有图标：
+ * - 颜色块一到手就「长大」，文字展开又把图标从格子中心推开 → 切换时整排都在动；
+ * - 选中项图标还叠了 `bounceScale`（1 → 1.16 → 1），两个状态的图标尺寸不一致。
+ * 现在四项同构、指示点用**透明占位**（不改变布局高度），切换只变色，
+ * 图标位置与尺寸在两种状态下逐像素相同。
  */
 @Composable
 fun FloatingBottomNav(
@@ -112,21 +112,19 @@ private fun RowScope.NavCell(
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val app = LocalAppColors.current
     val interaction = remember { MutableInteractionSource() }
 
-    // 选中底色：primary（§3.1「选中项背景变为 primary」）
-    val background by animateColorAsState(
-        targetValue = if (selected) scheme.primary else Color.Transparent,
-        animationSpec = tween(durationMillis = 260),
-        label = "nav-bg",
-    )
     val fg by animateColorAsState(
-        targetValue = if (selected) app.brandInk else scheme.onSurfaceVariant,
-        animationSpec = tween(durationMillis = 260),
+        targetValue = if (selected) scheme.primary else scheme.onSurfaceVariant,
+        animationSpec = tween(durationMillis = 220),
         label = "nav-fg",
     )
-    val iconScale = bounceScale(active = selected)
+    // 指示点只做透明度：位置与尺寸恒定，切换时不会把下面的图标顶下去
+    val dotAlpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(durationMillis = 200),
+        label = "nav-dot",
+    )
 
     Box(
         modifier = Modifier
@@ -139,33 +137,34 @@ private fun RowScope.NavCell(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .pressScale(interaction, pressedScale = 0.95f)
-                .height(Dimens.navItem)
-                .clip(AppShape.nav)
-                .background(background)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+                .pressScale(interaction, pressedScale = 0.96f)
+                .padding(horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(Modifier.scale(iconScale)) { spec.icon(fg) }
-            AnimatedVisibility(
-                visible = selected,
-                enter = fadeIn(tween(160)) + expandHorizontally(tween(220)),
-                exit = fadeOut(tween(100)) + shrinkHorizontally(tween(180)),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = spec.label,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = fg,
-                        maxLines = 1,
-                    )
-                }
-            }
+            Box(
+                Modifier
+                    .size(NavDotSize)
+                    .clip(AppShape.circle)
+                    .background(scheme.primary.copy(alpha = dotAlpha)),
+            )
+            Spacer(Modifier.height(3.dp))
+            Box(Modifier.size(NavIconSize)) { spec.icon(fg) }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = spec.label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                color = fg,
+                maxLines = 1,
+            )
         }
     }
 }
+
+/** 选中指示点直径（§3.1「品牌色图标 + 顶部指示点」）。 */
+private val NavDotSize = 5.dp
+
+/** 图标槽位：四项图标本体都是 20dp，用固定槽位兜住，避免个别图标尺寸不同导致基线错位。 */
+private val NavIconSize = 20.dp
