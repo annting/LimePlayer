@@ -19,6 +19,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -61,6 +62,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -82,15 +86,22 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.MonoLabelStyle
 import app.myplayer.core.designsystem.PlayerTokens
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.CheckIcon
 import app.myplayer.core.designsystem.components.MoreVerticalIcon
+import app.myplayer.core.designsystem.components.LockIcon
 import app.myplayer.core.designsystem.components.LockOpenIcon
 import app.myplayer.core.designsystem.components.PauseIcon
 import app.myplayer.core.designsystem.components.PictureInPictureIcon
@@ -143,14 +154,22 @@ fun PlayerScreen(
      * `fakeRotation` = 这个横向是靠内容转 90° 实现的（窗口仍是竖的，退场方向要换算）。
      */
     onLandscapeChange: (landscape: Boolean, fakeRotation: Boolean) -> Unit = { _, _ -> },
+    /**
+     * 隐私模式：**禁用画中画**（`docs/隐私模式方案.md` §9.6 / 决策 25）。
+     *
+     * PiP 小窗会把画面投到桌面且不受 `FLAG_SECURE` 保护（系统缩略图就是内容本身），
+     * 与「隐私内容不外露」直接冲突 —— 隐私模式下干脆不提供这个入口。
+     */
+    privacyMode: Boolean = false,
 ) {
     val state by vm.ui.collectAsStateWithLifecycle()
     var indicator by remember { mutableStateOf<SystemIndicator?>(null) }
 
     // 画中画入口（手动触发；自动触发与「切后台自动暂停」冲突，2026-10-18 用户要求改为按钮）
     val context = androidx.compose.ui.platform.LocalContext.current
-    val pipSupported = remember(context) {
-        context.findActivity() != null &&
+    val pipSupported = remember(context, privacyMode) {
+        !privacyMode &&
+            context.findActivity() != null &&
             context.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
     }
 
@@ -221,6 +240,30 @@ fun PlayerScreen(
     val landscapeNow = windowIsLandscape || fakeLandscape
     LaunchedEffect(landscapeNow, fakeLandscape) {
         onLandscapeChange(landscapeNow, fakeLandscape)
+    }
+
+    // 锁定态解锁图标的显隐（BUG-2）：锁定后自动隐藏，触摸浮现，3s 后再隐藏。
+    var lockHintVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(lockHintVisible) {
+        if (lockHintVisible) {
+            delay(3000)
+            lockHintVisible = false
+        }
+    }
+
+    // 锁定按钮（BUG-2）：锁界面 + 锁方向（粘性）。解锁恢复跟随设备。
+    val onToggleLock = {
+        val willLock = !state.locked
+        if (willLock) {
+            // 锁方向 = 当前逻辑方向，粘性（forcedByButton=false 不自动释放）
+            forced = if (landscapeNow) PlayerOrientation.LANDSCAPE else PlayerOrientation.PORTRAIT
+            forcedByButton = false
+            lockHintVisible = false
+        } else {
+            forced = null
+            forcedByButton = false
+        }
+        vm.toggleLock()
     }
 
     // 横屏隐藏系统栏：系统栏按窗口方向绘制，不隐藏会横在画面中间
@@ -307,40 +350,35 @@ fun PlayerScreen(
                         else Modifier.fillMaxHeight().aspectRatio(videoRatio)
                     ScaleMode.FILL -> Modifier.fillMaxSize()
                     ScaleMode.CROP -> {
-                        // 覆盖：取两个方向都铺满的最小尺寸
+                        // 覆盖：取两个方向都铺满的最小尺寸。
+                        // P1-2：必须 requiredSize —— 普通 width/height 会被舞台 requiredSize 钳制，CROP 退化成 FIT 留黑边
                         val w = maxOf(stageW, stageH * videoRatio)
-                        Modifier.width(w).height(w / videoRatio)
+                        Modifier.requiredSize(w, w / videoRatio)
                     }
                     ScaleMode.ORIGINAL -> with(density) {
                         Modifier.size(vw.toDp(), vh.toDp())
                     }
                 }
             }
+            // 视频区在舞台里的矩形：字幕要靠它判断「有没有黑边、要不要把字幕放到画面外」
+            var videoRect by remember { mutableStateOf(Rect.Zero) }
             VideoSurface(
                 sink = vm::attachVideoSurface,
-                modifier = Modifier.align(Alignment.Center).then(videoModifier),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .then(videoModifier)
+                    .onGloballyPositioned { coords ->
+                        val r = coords.boundsInParent()
+                        if (r != videoRect) videoRect = r
+                    },
             )
-            // 字幕渲染层（任务：字幕渲染）：Media3 SubtitleView 直接消费引擎 cues，
-            // 与视频面同区域对齐，随画面比例模式一起缩放。
-            //
-            // 字号与位置必须显式指定（2026-10-19 真机反馈）：
-            // · 不设字号时 SubtitleView 跟随系统字幕大小，用户系统里调过就会「特别大」；
-            //   固定 16sp 并忽略内嵌字号（外挂 srt 本身也没有字号）。
-            // · cue 默认贴在视图最底，即视频画面下沿；加 bottomPaddingFraction 抬到
-            //   画面下方约 10% 处，既避开系统手势区也不压住控制栏。
-            androidx.compose.ui.viewinterop.AndroidView(
-                factory = { ctx ->
-                    androidx.media3.ui.SubtitleView(ctx).apply {
-                        setApplyEmbeddedFontSizes(false)
-                        applySubtitleStyle(this, subtitleStyle)
-                    }
-                },
-                update = { view ->
-                    // 设置页改字号 / 颜色 / 位置 → 这里跟着重刷，字幕立即变（不用重进播放页）
-                    applySubtitleStyle(view, subtitleStyle)
-                    vm.attachSubtitleView(view)
-                },
-                modifier = Modifier.align(Alignment.Center).then(videoModifier),
+            // 字幕层：自绘（2026-10-26 起）。相比 media3 的 SubtitleView 多了两件事：
+            // · 上半区上对齐 / 下半区下对齐 —— 两行字幕不会被顶出屏幕；
+            // · 竖屏看横屏视频时，字幕落进画面外的黑边（贴着画面边缘）。
+            SubtitleLayer(
+                cues = state.cues,
+                style = subtitleStyle,
+                videoRect = videoRect,
             )
 
         GestureLayer(
@@ -348,6 +386,8 @@ fun PlayerScreen(
             locked = state.locked,
             doubleTapSeekMs = doubleTapSeekMs,
             onIndicator = { indicator = it },
+            onLockHint = { lockHintVisible = true },
+            fakeLandscape = fakeLandscape,
         )
 
         // 缓冲指示放到控制层**之上**（见下方），此处不再重复绘制
@@ -360,6 +400,21 @@ fun PlayerScreen(
         state.seekHint?.let { hint ->
             Text(
                 hint,
+                color = PlayerTokens.onMedia,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .offset(y = (-76).dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(PlayerTokens.controlScrim)
+                    .padding(horizontal = 22.dp, vertical = 14.dp),
+            )
+        }
+
+        // 长按 2× 浮标（BUG-3）：与双击 seek 提示同位置，松手随 speedBoost 置 false 一起消失。
+        if (state.speedBoost) {
+            Text(
+                "2×",
                 color = PlayerTokens.onMedia,
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier
@@ -395,6 +450,8 @@ fun PlayerScreen(
                         PlayerOrientation.LANDSCAPE
                     }
                 },
+                privacyActive = privacyMode,
+                onToggleLock = onToggleLock,
             )
         }
 
@@ -419,10 +476,10 @@ fun PlayerScreen(
             )
         }
 
-        // 锁定态：只留解锁入口
-        if (state.locked) {
+        // 锁定态：只留解锁入口（播放自动隐藏，触摸浮现，点击解锁，BUG-2）
+        if (state.locked && lockHintVisible) {
             PlayerIconButton(
-                onClick = vm::toggleLock,
+                onClick = onToggleLock,
                 modifier = Modifier.align(Alignment.TopStart).padding(top = statusBarTop).padding(16.dp),
             ) {
                 LockOpenIcon(tint = PlayerTokens.onMedia)
@@ -445,19 +502,20 @@ fun PlayerScreen(
             }
         }
 
-        // 拖动预览（`03` §5.4 / 任务 3-2）：有 trickplay 才显示，无预览不影响拖动
+        // 拖动预览（`03` §5.4 / 任务 3-2）：屏幕正中间显示当前位置。
+        // 有 trickplay 用服务端分片图；无 trickplay 只显示时间（本地抽帧兼容性差，已移除）。
         if (state.scrubbing) {
             state.trickplay?.let { spec ->
                 TrickplayPreview(
                     vm = vm,
                     spec = spec,
                     positionMs = state.scrubPositionMs,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = navBarBottom)
-                        .padding(bottom = 132.dp),
+                    modifier = Modifier.align(Alignment.Center),
                 )
-            }
+            } ?: ScrubTimeIndicator(
+                positionMs = state.scrubPositionMs,
+                modifier = Modifier.align(Alignment.Center),
+            )
         }
 
         // 连播浮层（`03` §5.7：90% 出现「下一集 + 10s 倒计时」）
@@ -525,6 +583,24 @@ private fun VideoSurface(sink: (Surface?) -> Unit, modifier: Modifier = Modifier
 
 // ---- 手势层 ----
 
+/**
+ * 无 trickplay 片源拖动进度时的**居中时间**（2026-10-31 起不再本地抽帧——AVI 抽不出、
+ * MP4 有延迟，兼容性差）。与双击 seek 提示同款样式：圆角黑底胶囊、居中上抬 76dp。
+ */
+@Composable
+private fun ScrubTimeIndicator(positionMs: Long, modifier: Modifier = Modifier) {
+    Text(
+        formatTime(positionMs),
+        color = PlayerTokens.onMedia,
+        style = MaterialTheme.typography.titleMedium,
+        modifier = modifier
+            .offset(y = (-76).dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(PlayerTokens.controlScrim)
+            .padding(horizontal = 22.dp, vertical = 14.dp),
+    )
+}
+
 /** 系统操作指示（亮度 / 音量）。 */
 private data class SystemIndicator(val kind: Kind, val value: Float) {
     enum class Kind { BRIGHTNESS, VOLUME }
@@ -537,6 +613,10 @@ private fun GestureLayer(
     /** 「双击快进」步长（设置项）：双击左/右半屏各跳这么多毫秒。 */
     doubleTapSeekMs: Long,
     onIndicator: (SystemIndicator?) -> Unit,
+    /** 锁定态单击画面：浮现解锁图标（BUG-2）。 */
+    onLockHint: () -> Unit = {},
+    /** 假横屏（内容 rotationZ=90f）：视觉左右 ↔ 布局上下对调，手势坐标需映射（P1-1）。 */
+    fakeLandscape: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -558,6 +638,11 @@ private fun GestureLayer(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(locked) {
+                // 锁定态：单击画面 = 浮现解锁图标（其余手势全屏蔽，BUG-2）
+                if (!locked) return@pointerInput
+                detectTapGestures(onTap = { onLockHint() })
+            }
+            .pointerInput(locked) {
                 if (locked) return@pointerInput
                 detectTapGestures(
                     onTap = {
@@ -565,57 +650,111 @@ private fun GestureLayer(
                         vm.notifyInteraction()
                     },
                     onDoubleTap = { offset ->
-                        if (offset.x < size.width / 2f) vm.seekByWithHint(-doubleTapSeekMs)
+                        val leftSide = if (fakeLandscape) offset.y < size.height / 2f else offset.x < size.width / 2f
+                        if (leftSide) vm.seekByWithHint(-doubleTapSeekMs)
                         else vm.seekByWithHint(doubleTapSeekMs)
                     },
                 )
             }
+            // 长按 2×（BUG-3）：独立手势，与单击 / 双击 / 拖动互斥（长按需「按住不动超时」）。
             .pointerInput(locked) {
+                if (locked) return@pointerInput
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val longPress = awaitLongPressOrCancellation(down.id)
+                    if (longPress != null) {
+                        vm.enterTempSpeed()
+                        waitForUpOrCancellation()
+                        vm.exitTempSpeed()
+                    }
+                }
+            }
+            .pointerInput(locked, fakeLandscape) {
                 if (locked) return@pointerInput
                 var startValue = 0f
                 var left = true
                 var accumulated = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { offset ->
-                        left = offset.x < size.width / 2f
-                        startValue = if (left) currentBrightness(activity) else currentVolumeRatio(audio)
-                        accumulated = 0f
-                    },
-                    onVerticalDrag = { _, dragAmount ->
-                        accumulated += dragAmount
-                        val v = verticalDragValue(startValue, accumulated, size.height)
-                        if (left) setBrightness(activity, v) else setVolumeRatio(audio, v)
-                        showIndicator(
-                            SystemIndicator(
-                                kind = if (left) SystemIndicator.Kind.BRIGHTNESS else SystemIndicator.Kind.VOLUME,
-                                value = v,
+                // 假横屏：视觉上下 = 布局左右（horizontal drag），视觉左右半屏 = 布局上下半屏（P1-1）
+                if (fakeLandscape) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            left = offset.y < size.height / 2f
+                            startValue = if (left) currentBrightness(activity) else currentVolumeRatio(audio)
+                            accumulated = 0f
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            accumulated += dragAmount
+                            val v = verticalDragValue(startValue, accumulated, size.width)
+                            if (left) setBrightness(activity, v) else setVolumeRatio(audio, v)
+                            showIndicator(
+                                SystemIndicator(
+                                    kind = if (left) SystemIndicator.Kind.BRIGHTNESS else SystemIndicator.Kind.VOLUME,
+                                    value = v,
+                                )
                             )
-                        )
-                    },
-                )
+                        },
+                    )
+                } else {
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            left = offset.x < size.width / 2f
+                            startValue = if (left) currentBrightness(activity) else currentVolumeRatio(audio)
+                            accumulated = 0f
+                        },
+                        onVerticalDrag = { _, dragAmount ->
+                            accumulated += dragAmount
+                            val v = verticalDragValue(startValue, accumulated, size.height)
+                            if (left) setBrightness(activity, v) else setVolumeRatio(audio, v)
+                            showIndicator(
+                                SystemIndicator(
+                                    kind = if (left) SystemIndicator.Kind.BRIGHTNESS else SystemIndicator.Kind.VOLUME,
+                                    value = v,
+                                )
+                            )
+                        },
+                    )
+                }
             }
             // 横向拖动 = 拖进度（2026-10-24 用户选：「拖动进度」）。
             // 它同时修掉一个误触：以前横向滑动没有任何手势认领，抬手会被
             // `detectTapGestures` 当成单击 → 控制层（进度条）莫名弹出来。
-            .pointerInput(locked) {
+            .pointerInput(locked, fakeLandscape) {
                 if (locked) return@pointerInput
                 var baseMs = 0L
-                var widthPx = 1f
-                var accumulatedX = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = {
-                        widthPx = size.width.toFloat().coerceAtLeast(1f)
-                        baseMs = vm.ui.value.positionMs
-                        accumulatedX = 0f
-                        vm.beginScrub()
-                    },
-                    onHorizontalDrag = { _, dragAmount ->
-                        accumulatedX += dragAmount
-                        vm.scrubTo(baseMs + seekDeltaMs(accumulatedX, widthPx))
-                    },
-                    onDragEnd = { vm.commitScrub() },
-                    onDragCancel = { vm.cancelScrub() },
-                )
+                var spanPx = 1f
+                var accumulated = 0f
+                // 假横屏：视觉左右 = 布局上下（vertical drag），量程 = 布局高（P1-1）
+                if (fakeLandscape) {
+                    detectVerticalDragGestures(
+                        onDragStart = {
+                            spanPx = size.height.toFloat().coerceAtLeast(1f)
+                            baseMs = vm.ui.value.positionMs
+                            accumulated = 0f
+                            vm.beginScrub()
+                        },
+                        onVerticalDrag = { _, dragAmount ->
+                            accumulated += dragAmount
+                            vm.scrubTo(baseMs + seekDeltaMs(accumulated, spanPx))
+                        },
+                        onDragEnd = { vm.commitScrub() },
+                        onDragCancel = { vm.cancelScrub() },
+                    )
+                } else {
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            spanPx = size.width.toFloat().coerceAtLeast(1f)
+                            baseMs = vm.ui.value.positionMs
+                            accumulated = 0f
+                            vm.beginScrub()
+                        },
+                        onHorizontalDrag = { _, dragAmount ->
+                            accumulated += dragAmount
+                            vm.scrubTo(baseMs + seekDeltaMs(accumulated, spanPx))
+                        },
+                        onDragEnd = { vm.commitScrub() },
+                        onDragCancel = { vm.cancelScrub() },
+                    )
+                }
             },
     )
 }
@@ -806,6 +945,10 @@ private fun PlayerControls(
      */
     landscape: Boolean,
     onToggleRotate: () -> Unit,
+    /** 锁定按钮（锁界面 + 锁方向，BUG-2）。 */
+    onToggleLock: () -> Unit,
+    /** 隐私模式：右上角有全局「隐私」胶囊，顶栏右侧按钮需左移让位（BUG-5）。 */
+    privacyActive: Boolean = false,
 ) {
     // 「剩余时长」只在横屏版式出现（`03` §5.2 调整）
     val isLandscape = landscape
@@ -863,7 +1006,12 @@ private fun PlayerControls(
                     )
                 )
                 .padding(top = statusBarTop)
-                .padding(horizontal = 6.dp, vertical = 4.dp),
+                .padding(
+                    start = 6.dp,
+                    end = if (privacyActive) Dimens.privacyBadgeReserved else 6.dp,
+                    top = 4.dp,
+                    bottom = 4.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PlayerIconButton(onClick = onBack, size = 40.dp, background = Color.Transparent) {
@@ -887,8 +1035,8 @@ private fun PlayerControls(
                 }
             }
             // 锁与「更多」收紧到 34dp：两者图标只有 18dp，40dp 时中间空了 22dp（2026-10-19 反馈）
-            PlayerIconButton(onClick = vm::toggleLock, size = 34.dp, background = Color.Transparent) {
-                LockOpenIcon(tint = PlayerTokens.onMedia)
+            PlayerIconButton(onClick = onToggleLock, size = 34.dp, background = Color.Transparent) {
+                LockIcon(tint = PlayerTokens.onMedia)
             }
             // 完整设置面板入口（右上角、锁定按钮右侧）
             PlayerIconButton(onClick = onOpenSheet, size = 34.dp, background = Color.Transparent) {
@@ -897,6 +1045,8 @@ private fun PlayerControls(
         }
 
         // ── 右侧中部：画中画 + 横竖屏切换 ──
+        // 这两颗按钮**没有渐变兜底**（顶栏、底栏都有），必须自带衬底：
+        // 原来是 10% 白，压在亮画面上等于没有底，白图标直接消失（UI 优化方案 L6）。
         Column(
             Modifier
                 .align(Alignment.CenterEnd)
@@ -908,9 +1058,10 @@ private fun PlayerControls(
                 PlayerIconButton(
                     onClick = { vm.notifyInteraction(); onEnterPip() },
                     size = 40.dp,
-                    background = PlayerTokens.onMedia.copy(alpha = 0.10f),
+                    background = PlayerTokens.floatingScrim,
+                    border = PlayerTokens.floatingBorder,
                 ) {
-                    PictureInPictureIcon(tint = PlayerTokens.onMedia.copy(alpha = 0.9f))
+                    PictureInPictureIcon(tint = PlayerTokens.onMedia)
                 }
             }
             PlayerIconButton(
@@ -920,9 +1071,10 @@ private fun PlayerControls(
                     onToggleRotate()
                 },
                 size = 40.dp,
-                background = PlayerTokens.onMedia.copy(alpha = 0.10f),
+                background = PlayerTokens.floatingScrim,
+                border = PlayerTokens.floatingBorder,
             ) {
-                ScreenRotateIcon(tint = PlayerTokens.onMedia.copy(alpha = 0.9f))
+                ScreenRotateIcon(tint = PlayerTokens.onMedia)
             }
         }
 
@@ -1236,13 +1388,18 @@ private fun QuickListRow(option: QuickOption) {
     }
 }
 
-/** 播放器覆盖层按钮：半透明圆底 + 按压微缩放。 */
+/**
+ * 播放器覆盖层按钮：半透明圆底 + 按压微缩放。
+ *
+ * [border] 非空时描一圈 1dp（悬浮在画面上的按钮用，亮暗画面都能勾出边界）。
+ */
 @Composable
 private fun PlayerIconButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 44.dp,
     background: Color = PlayerTokens.chipScrim,
+    border: Color? = null,
     content: @Composable () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -1258,6 +1415,7 @@ private fun PlayerIconButton(
             .scale(scale)
             .clip(CircleShape)
             .background(background)
+            .then(if (border != null) Modifier.border(1.dp, border, CircleShape) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { content() }
@@ -1471,36 +1629,3 @@ internal const val SEEK_FULL_WIDTH_MS = 90_000f
 internal fun seekDeltaMs(dragPx: Float, widthPx: Float): Long =
     if (widthPx <= 0f) 0L else (dragPx / widthPx * SEEK_FULL_WIDTH_MS).toLong()
 
-/**
- * 把「设置 → 字幕设置」应用到 media3 的 [androidx.media3.ui.SubtitleView]。
- *
- * 支持：字号、填充色、描边色、垂直位置。
- * **描边粗细只能表达「有 / 无」**：`CaptionStyleCompat` 没有线宽参数（media3 内部固定），
- * 所以 `outlineWidthDp > 0` 一律按系统标准描边渲染 —— 设置页那根滑杆目前只有「0 = 关」是精确的。
- */
-private fun applySubtitleStyle(
-    view: androidx.media3.ui.SubtitleView,
-    style: PlayerSubtitleStyle,
-) {
-    view.setFixedTextSize(
-        android.util.TypedValue.COMPLEX_UNIT_SP,
-        style.fontSizeSp.coerceIn(10f, 40f),
-    )
-    // 设置里的 verticalPosition 是「字幕所在的高度比例」（0.9 = 靠下），
-    // SubtitleView 用的是「距底部的内边距比例」→ `1 - v` 正好互为镜像。
-    view.setBottomPaddingFraction((1f - style.verticalPosition).coerceIn(0f, 0.9f))
-    view.setStyle(
-        androidx.media3.ui.CaptionStyleCompat(
-            style.textColorArgb,
-            android.graphics.Color.TRANSPARENT,     // 背景
-            android.graphics.Color.TRANSPARENT,     // window 色
-            if (style.outlineWidthDp > 0.05f) {
-                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
-            } else {
-                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
-            },
-            style.outlineColorArgb,
-            null,                                   // typeface：跟随系统
-        )
-    )
-}

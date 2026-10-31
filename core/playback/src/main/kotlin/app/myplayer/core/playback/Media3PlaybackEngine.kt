@@ -43,12 +43,17 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
         if (currentHeaders.isEmpty()) spec else spec.withRequestHeaders(currentHeaders)
     }
 
-    // 字幕渲染（任务：字幕渲染）：media3-ui 1.11 的 SubtitleView 没有 setPlayer，
-    // 改走 Player.Listener.onCues → view.setCues（声明需在 init 之前）。
-    private var subtitleView: androidx.media3.ui.SubtitleView? = null
+    // 字幕：引擎只把**文本**抛进状态，排版交给播放页（2026-10-26 起自绘，
+    // 因为 SubtitleView 只能整块贴底，做不了上对齐 / 放黑边）。
     private val cueListener = object : Player.Listener {
         override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
-            subtitleView?.setCues(cueGroup.cues)
+            _state.update { st ->
+                st.copy(
+                    cues = cueGroup.cues.mapNotNull { cue ->
+                        cue.text?.toString()?.takeIf { it.isNotBlank() }
+                    },
+                )
+            }
         }
     }
 
@@ -93,6 +98,10 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var released = false
 
+    /** 隐私模式：prepare 时把暴露给系统的媒体元数据换成占位（见 [toMediaItem] 的 redact）。 */
+    @Volatile
+    private var privacyMode = false
+
     /** 是否已释放（持有者据此重建引擎，避免「已释放的引擎不能再 prepare」）。 */
     val isReleased: Boolean get() = released
 
@@ -134,6 +143,10 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
 
     override fun prepare(plan: PlaybackPlan, startPositionMs: Long) {
         check(!released) { "已释放的引擎不能再 prepare" }
+        // P1-4：重置会话级状态，避免上一个条目的倍速 / 音轨 override 串到新条目。
+        // VM 的 start() 在 prepare 之后会重新 setSpeed(defaultSpeed)，此处重置不会被吞。
+        player.setPlaybackSpeed(1f)
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
         currentHeaders = when (plan) {
             is PlaybackPlan.Direct -> plan.headers
             is PlaybackPlan.Transcode -> plan.headers
@@ -143,11 +156,23 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
             is PlaybackPlan.Direct -> plan.subtitles
             is PlaybackPlan.Transcode -> plan.subtitles
         }
-        player.setMediaItem(plan.toMediaItem(subs), startPositionMs)
+        player.setMediaItem(plan.toMediaItem(subs, redact = privacyMode), startPositionMs)
         player.prepare()
         syncStructure()
         mainHandler.removeCallbacks(ticker)
         mainHandler.postDelayed(ticker, POSITION_TICK_MS)
+    }
+
+    /**
+     * 隐私模式的媒体会话占位（方案 §9.6）。
+     *
+     * 只影响**暴露给系统**的元数据（锁屏 / 通知 / 蓝牙 AVRCP / Android Auto 读到的
+     * `MediaMetadata.mediaId` 与标题），不影响真实播放地址 —— 播放器内部仍用原 URI。
+     * 隐私模式只在起播前进入（进隐私才会看到私有源），因此这里只翻开关，
+     * 不去替换正在播的媒体项（替换会触发重新 prepare，得不偿失）。
+     */
+    override fun setPrivacyMode(enabled: Boolean) {
+        privacyMode = enabled
     }
 
     override fun play() {
@@ -198,17 +223,11 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
         if (!released) player.setVideoSurface(surface)
     }
 
-    override fun attachSubtitleView(view: android.view.View?) {
-        subtitleView = view as? androidx.media3.ui.SubtitleView
-        subtitleView?.setCues(player.currentCues.cues)
-    }
-
     override fun stopSession() {
         if (released) return
         // 先断开视频面：SurfaceView 是独立窗口图层，Compose 的转场 / alpha 影响不到它；
         // 退出播放页时若还挂着 surface，就会看到视频残留在下层页面上方（2026-10-19 真机 bug）。
         player.setVideoSurface(null)
-        subtitleView?.setCues(emptyList())
         _state.update { EngineState() }   // 会话结束：清空上一次的 error / tracks / position
         // stop() 会同步等待内部播放线程收尾（网络流可达数百毫秒），放到下一帧执行：
         // 先把 Back 的导航让出去，避免"点返回卡一下"。
@@ -270,8 +289,15 @@ class Media3PlaybackEngine(context: Context) : PlaybackEngine {
 /**
  * `Transcode` 显式标注 HLS MIME —— 转码 URL 的 path 是 `master.m3u8` 且带 query，
  * 不依赖 [DefaultMediaSourceFactory] 的扩展名推断，避免路径变体（如服务端改写 URL）导致回退到渐进式解析。
+ *
+ * [redact] = 隐私模式：媒体项只带**占位** id 与标题。真实 URI 仍交给播放器（必然要能播），
+ * 但 `MediaMetadata.mediaId` 默认就是 URI/路径 —— SMB 的 mediaSourceId 是完整路径，
+ * 会原样出现在锁屏/通知/车机/`dumpsys media_session` 里。隐私模式下必须换成常量。
  */
-internal fun PlaybackPlan.toMediaItem(subtitles: List<app.myplayer.core.model.ExternalSubtitle> = emptyList()): MediaItem {
+internal fun PlaybackPlan.toMediaItem(
+    subtitles: List<app.myplayer.core.model.ExternalSubtitle> = emptyList(),
+    redact: Boolean = false,
+): MediaItem {
     // 外挂字幕轨（任务：字幕渲染）：服务端按需转 srt/vtt 下发，ExoPlayer 侧载后
     // 会出现在 TRACK_TYPE_TEXT 轨道里，播放器菜单即可切换。
     val subtitleConfigs = subtitles.map { sub ->
@@ -282,7 +308,7 @@ internal fun PlaybackPlan.toMediaItem(subtitles: List<app.myplayer.core.model.Ex
             .setSelectionFlags(if (sub.isDefault) C.SELECTION_FLAG_DEFAULT else 0)
             .build()
     }
-    return when (this) {
+    val item = when (this) {
     is PlaybackPlan.Direct -> MediaItem.Builder()
         .setUri(uri)
         .setSubtitleConfigurations(subtitleConfigs)
@@ -294,7 +320,24 @@ internal fun PlaybackPlan.toMediaItem(subtitles: List<app.myplayer.core.model.Ex
         .setSubtitleConfigurations(subtitleConfigs)
         .build()
     }
+    if (!redact) return item
+    return item.buildUpon()
+        .setMediaId(PRIVATE_MEDIA_ID)
+        .setMediaMetadata(
+            androidx.media3.common.MediaMetadata.Builder()
+                .setTitle(PRIVATE_TITLE)
+                .setIsBrowsable(false)
+                .setIsPlayable(true)
+                .build(),
+        )
+        .build()
 }
+
+/** 隐私模式下媒体会话暴露的占位标题（不含任何真实条目信息）。 */
+const val PRIVATE_TITLE: String = "LimePlayer"
+
+/** 隐私模式下媒体项 id 的占位值（正常模式是 URI 或 SMB 路径）。 */
+const val PRIVATE_MEDIA_ID: String = "limeplayer-private"
 
 // ---- Tracks → TrackInfo ----
 

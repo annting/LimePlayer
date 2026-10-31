@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -24,6 +26,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.MediaSource
+import app.myplayer.core.model.PlaybackStore
+import app.myplayer.core.playback.EngineStatus
 
 /**
  * 播放页入口：使用进程级共享引擎（由前台服务持有，见 [engine] 注入方），
@@ -52,11 +56,15 @@ fun PlayerRoute(
     defaultOrientation: PlayerOrientation = PlayerOrientation.AUTO,
     inPictureInPicture: Boolean = false,
     onLandscapeChange: (landscape: Boolean, fakeRotation: Boolean) -> Unit = { _, _ -> },
+    /** 本地进度写入口（文件型源）；由装配层（AppNavHost）注入，null = 不写本地。 */
+    playbackStore: PlaybackStore? = null,
+    /** 隐私模式：禁用画中画（PiP 小窗不受 FLAG_SECURE 保护）。 */
+    privacyMode: Boolean = false,
 ) {
     val vm: PlayerViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                PlayerViewModel(engine)
+                PlayerViewModel(engine, playbackStore = playbackStore)
             }
         },
     )
@@ -68,10 +76,33 @@ fun PlayerRoute(
             autoPlayNext = autoPlayNext,
             defaultSpeed = defaultSpeed,
             initialScaleMode = initialScaleMode,
+            // 设置页「字幕设置 · 默认使用字幕」：轨道就绪后自动选一条
+            defaultSubtitle = subtitleStyle.defaultEnabled,
         )
     }
     // 播完且无下一集 → 回列表（`03` §5.7）
     val ui by vm.ui.collectAsStateWithLifecycle()
+
+    // ── 播放期间不允许息屏（用户 2026-10-27 反馈「播放中自动黑屏」）──
+    //
+    // 根因：全仓没有任何地方举 `FLAG_KEEP_SCREEN_ON`，屏幕按系统 `screen_off_timeout`
+    // （实测三星 30000ms）照常熄灭 —— 播放器不会因为「正在播视频」自动豁免。
+    //
+    // 实现：`View.keepScreenOn` 与窗口的 `FLAG_KEEP_SCREEN_ON` 等价，挂在 ComposeView 上
+    // 由 WindowManager 在窗口可见时持有，窗口不可见（退到后台）时系统自动不采纳，
+    // 所以不需要额外判断前后台。
+    //
+    // 判据带上 `BUFFERING`：缓冲期间 `isPlaying=false`，只看 isPlaying 会在长缓冲中途黑屏。
+    // 暂停 / 出错 / 播完 → 释放，交还给系统超时（离开播放页后屏幕该能正常休眠）。
+    //
+    // ⚠️ `onDispose` 必须复位：这个标志是**窗口级**的，播放页退出时若还举着，
+    // 整个 App 其它页面都会永不熄屏。
+    val keepScreenOn = ui.isPlaying || ui.status == EngineStatus.BUFFERING
+    val hostView = LocalView.current
+    DisposableEffect(keepScreenOn) {
+        hostView.keepScreenOn = keepScreenOn
+        onDispose { hostView.keepScreenOn = false }
+    }
 
     // ── 退出流程（2026-10-20 真机反馈后重做）──
     //
@@ -137,6 +168,7 @@ fun PlayerRoute(
             subtitleStyle = subtitleStyle,
             defaultOrientation = defaultOrientation,
             inPictureInPicture = inPictureInPicture,
+            privacyMode = privacyMode,
             onLandscapeChange = onLandscapeChange,
         )
     }

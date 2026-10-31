@@ -43,12 +43,6 @@ interface PlaybackEngine {
     fun setSpeed(speed: Float)
 
     /**
-     * 绑定字幕渲染视图（如 Media3 `SubtitleView`）。UI 侧组合进入时调用；
-     * 实现不支持字幕渲染时为 no-op。
-     */
-    fun attachSubtitleView(view: android.view.View?) {}
-
-    /**
      * 选择音轨 / 字幕轨。[trackId] 为 [EngineState.tracks] 中的 id；
      * 传 `null` 表示关闭该类型（如关闭字幕）。
      */
@@ -67,6 +61,12 @@ interface PlaybackEngine {
      */
     fun stopSession() {}
 
+    /**
+     * 隐私模式开关（`docs/隐私模式方案.md` §9.6）：打开后媒体会话只暴露占位标题与 id，
+     * 锁屏 / 通知 / 蓝牙 AVRCP / Android Auto 看不到真实标题与路径。默认空实现。
+     */
+    fun setPrivacyMode(enabled: Boolean) {}
+
     /** 释放全部资源。幂等（重复调用安全）。释放后不应再调用其它方法。 */
     fun release()
 }
@@ -83,6 +83,13 @@ data class EngineState(
     val videoHeight: Int = 0,
     val error: EngineError? = null,
     val tracks: List<TrackInfo> = emptyList(),
+    /**
+     * 当前这一帧要显示的字幕文本（每条 cue 一项，可能含 `\n`）。
+     *
+     * 2026-10-26 起改由**播放页自绘**：media3 的 `SubtitleView` 只能整块贴底、
+     * 没法做「上对齐 / 放黑边」，所以引擎只负责把文本抛出来，排版在 UI 层。
+     */
+    val cues: List<String> = emptyList(),
 )
 
 enum class EngineStatus {

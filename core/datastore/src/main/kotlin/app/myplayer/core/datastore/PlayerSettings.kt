@@ -19,6 +19,13 @@ data class SubtitleStyle(
     val outlineWidthDp: Float = 2f,
     /** 字幕在画面中的垂直位置：0.1 = 靠上，0.9 = 靠下。 */
     val verticalPosition: Float = 0.9f,
+    /**
+     * 起播时自动开启字幕（2026-10-26 用户需求）。
+     *
+     * 之前没有任何自动选择逻辑：服务端给了外挂/内嵌字幕轨也不会被选中，
+     * 每次都得在播放页手动点一次「字幕 → 中文」。
+     */
+    val defaultEnabled: Boolean = true,
 )
 
 /**

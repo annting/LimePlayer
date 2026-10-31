@@ -65,4 +65,49 @@ class PlayerUtilsTest {
         // 宽度异常（首帧还没量到）不能除零
         assertThat(seekDeltaMs(dragPx = 100f, widthPx = 0f)).isEqualTo(0L)
     }
+
+    @Test
+    fun `resolvePlayerOrientation forced 优先于默认值和设备方向`() {
+        // BUG-2：forced 非空 = 粘性锁方向，无论设备怎么转都返回 forced
+        assertThat(resolvePlayerOrientation(PlayerOrientation.AUTO, PlayerOrientation.LANDSCAPE, deviceLandscape = false))
+            .isEqualTo(PlayerOrientation.LANDSCAPE)
+        assertThat(resolvePlayerOrientation(PlayerOrientation.LANDSCAPE, PlayerOrientation.PORTRAIT, deviceLandscape = true))
+            .isEqualTo(PlayerOrientation.PORTRAIT)
+        // forced=null 时回落到默认值
+        assertThat(resolvePlayerOrientation(PlayerOrientation.LANDSCAPE, null, deviceLandscape = false))
+            .isEqualTo(PlayerOrientation.LANDSCAPE)
+        // forced=null、默认 AUTO 时跟随设备
+        assertThat(resolvePlayerOrientation(PlayerOrientation.AUTO, null, deviceLandscape = true))
+            .isEqualTo(PlayerOrientation.LANDSCAPE)
+        assertThat(resolvePlayerOrientation(PlayerOrientation.AUTO, null, deviceLandscape = false))
+            .isEqualTo(PlayerOrientation.PORTRAIT)
+    }
+
+    @Test
+    fun `releasesOnDeviceMatch 只有设备转到锁定方向才释放`() {
+        assertThat(releasesOnDeviceMatch(PlayerOrientation.LANDSCAPE, deviceLandscape = true)).isTrue()
+        assertThat(releasesOnDeviceMatch(PlayerOrientation.LANDSCAPE, deviceLandscape = false)).isFalse()
+        assertThat(releasesOnDeviceMatch(PlayerOrientation.PORTRAIT, deviceLandscape = false)).isTrue()
+        assertThat(releasesOnDeviceMatch(PlayerOrientation.PORTRAIT, deviceLandscape = true)).isFalse()
+        assertThat(releasesOnDeviceMatch(null, deviceLandscape = true)).isFalse()
+    }
+
+    @Test
+    fun `fakeLandscapeActive 三条件缺一不可`() {
+        assertThat(fakeLandscapeActive(PlayerOrientation.LANDSCAPE, windowIsLandscape = false, inPictureInPicture = false)).isTrue()
+        // 窗口已横屏（平板/折叠屏）不重复旋转（BUG-2026-007）
+        assertThat(fakeLandscapeActive(PlayerOrientation.LANDSCAPE, windowIsLandscape = true, inPictureInPicture = false)).isFalse()
+        // 画中画取消旋转
+        assertThat(fakeLandscapeActive(PlayerOrientation.LANDSCAPE, windowIsLandscape = false, inPictureInPicture = true)).isFalse()
+        // 方向机要竖屏不旋转
+        assertThat(fakeLandscapeActive(PlayerOrientation.PORTRAIT, windowIsLandscape = false, inPictureInPicture = false)).isFalse()
+    }
+
+    @Test
+    fun `isPortraitVideo 明显竖屏才锁`() {
+        assertThat(isPortraitVideo(1080, 1920)).isTrue()   // 9:16 锁
+        assertThat(isPortraitVideo(1080, 1080)).isFalse()  // 1:1 不锁
+        assertThat(isPortraitVideo(1440, 1080)).isFalse()  // 4:3 不锁
+        assertThat(isPortraitVideo(0, 0)).isFalse()        // 未知不锁
+    }
 }

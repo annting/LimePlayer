@@ -4,6 +4,7 @@ import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.PlayState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
@@ -23,13 +24,29 @@ class ProgressReporter(
     private val item: MediaItemDto,
 ) {
     private var started = false
+    private var jobs: List<Job> = emptyList()
 
     /** 启动上报（幂等）。[scope] 取消即停止上报（如 ViewModel 销毁）。 */
     fun start(scope: CoroutineScope) {
         if (started) return
         started = true
-        scope.launch { observeEvents() }
-        scope.launch { observePeriodic() }
+        jobs = listOf(
+            scope.launch { observeEvents() },
+            scope.launch { observePeriodic() },
+        )
+    }
+
+    /**
+     * 停止上报（连播换集 / 换片时必须调）。
+     *
+     * 不调会怎样：`start()` 每次新建 reporter 挂到同一个 `viewModelScope`，旧 reporter 的
+     * 协程不会被取消 —— 于是它会拿**新一集的位置**继续给**旧条目**上报，
+     * 把上一集的断点一路污染到片尾（R4 的第一个窟窿）。
+     */
+    fun stop() {
+        jobs.forEach { it.cancel() }
+        jobs = emptyList()
+        started = false
     }
 
     private suspend fun observeEvents() {

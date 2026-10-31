@@ -20,4 +20,6 @@ data class PlayerSubtitleStyle(
     val outlineWidthDp: Float = 0f,
     /** 字幕垂直位置：0.1 = 靠上，0.9 = 靠下。 */
     val verticalPosition: Float = 0.9f,
+    /** 起播时自动开启字幕（对应设置页「默认使用字幕」开关）。 */
+    val defaultEnabled: Boolean = true,
 )
