@@ -20,6 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -71,21 +74,47 @@ fun LibraryScreen(
             subtitle = serverLabel?.let { "已连接 · $it" } ?: "本机缓存",
         )
 
-        // ---- 库切换：胶囊 chips（横向滚动） ----
+        // ---- 库切换：8dp 圆角 chips（横向滚动 + 右端渐隐） ----
         if (state.libraries.isNotEmpty()) {
-            Row(
-                modifier = Modifier
+            val scrollState = rememberScrollState()
+            val canScrollForward = scrollState.canScrollForward
+            val bg = MaterialTheme.colorScheme.background
+            Box(
+                Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    // 渐变必须画在 drawWithContent 里，**不能**再叠一个 fillMaxHeight 的子 Box：
+                    // Box 的高度取所有子节点的最大值，而 Column 给子节点的 maxHeight 是「剩余高度」
+                    // → 那个子 Box 会把整块撑到满屏，把下面的内容区挤成 0 高（真机复现：媒体库整页空白）。
+                    .drawWithContent {
+                        drawContent()
+                        if (canScrollForward) {
+                            val w = FadeWidth.toPx()
+                            drawRect(
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(Color.Transparent, bg),
+                                    startX = size.width - w,
+                                    endX = size.width,
+                                ),
+                                topLeft = Offset(size.width - w, 0f),
+                                size = Size(w, size.height),
+                            )
+                        }
+                    },
             ) {
-                state.libraries.forEach { lib ->
-                    AppChip(
-                        text = lib.name,
-                        selected = lib.id == state.selectedLibraryId,
-                        onClick = { onSelectLibrary(lib.id) },
-                    )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(scrollState)
+                        .padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.libraries.forEach { lib ->
+                        AppChip(
+                            text = lib.name,
+                            selected = lib.id == state.selectedLibraryId,
+                            onClick = { onSelectLibrary(lib.id) },
+                        )
+                    }
                 }
             }
         }
@@ -315,3 +344,6 @@ private fun SkeletonGrid() {
         }
     }
 }
+
+/** 库切换行右端渐隐宽度（只做视觉提示，不参与布局）。 */
+private val FadeWidth = 24.dp

@@ -82,7 +82,15 @@ class ServerHomeDataSource(
 
         HomeSnapshot(
             serverName = serverName,
-            sourceType = HomeSourceType.EMBY,
+            // 首页形态跟着源走：SMB / LOCAL 显示「我的文件夹」（16:9 文件卡），其它显示「我的媒体库」
+            // LOCAL 一并归入文件夹形态：档二（卡片隐私标记）对两种文件源都生效
+            sourceType = if (source.type == app.myplayer.core.model.SourceType.SMB ||
+                source.type == app.myplayer.core.model.SourceType.LOCAL
+            ) {
+                HomeSourceType.SMB
+            } else {
+                HomeSourceType.EMBY
+            },
             continueWatching = resumePlan.await(),
             myLibrariesOrFolders = cards,
             dynamicSections = sections,

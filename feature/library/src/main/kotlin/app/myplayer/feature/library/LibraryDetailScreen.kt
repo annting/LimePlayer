@@ -10,13 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -38,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -45,19 +43,23 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.MyPlayerTheme
 import app.myplayer.core.designsystem.PlayerTokens
 import app.myplayer.core.designsystem.Spacing
 import app.myplayer.core.designsystem.components.CheckIcon
+import app.myplayer.core.designsystem.components.LockIcon
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.CircleIconButton
+import app.myplayer.core.designsystem.components.VideoIcon
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.ItemQuery
@@ -66,6 +68,9 @@ import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.resumeFraction
 import app.myplayer.feature.library.home.HomeImage
 import app.myplayer.feature.library.home.rememberHomeImage
+import app.myplayer.feature.library.home.rememberImageRequest
+import coil3.compose.AsyncImage
+import app.myplayer.core.designsystem.AppShape
 import app.myplayer.feature.library.home.HomeSourceType
 import app.myplayer.feature.library.home.MockHomeData
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,6 +98,13 @@ data class SmbVideoItem(
     val lastModified: Long = 0L,
     /** 本机播放记录里已看完（Room；Emby 项的已看状态在 `MediaItemDto.userData`）。 */
     val watched: Boolean = false,
+    /**
+     * 原始条目（`source:smb` 的 DTO）。
+     *
+     * 抽帧需要它：`LocalThumbnailProvider` 要拿 `container` / `sizeBytes` / `serverId`
+     * 才能决定「值不值得试、试哪条播放地址」。Mock 预览数据为 null（不出图）。
+     */
+    val item: MediaItemDto? = null,
 )
 
 /**
@@ -151,6 +163,8 @@ class LibraryDetailViewModel(
     private val serverId: String,
     private val libraryId: String,
     private val smbMode: Boolean,
+    /** 档二：文件库存（写 `isPrivate`）。null = 未接（预览 / 单测）。 */
+    private val catalog: app.myplayer.core.model.FileCatalogStore? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryDetailUiState())
@@ -160,13 +174,33 @@ class LibraryDetailViewModel(
         refresh()
     }
 
-    fun refresh() {
+    /**
+     * 重拉列表。
+     *
+     * [silent] = true 时**不切 loading**：从播放页返回要刷新卡片上的进度条，
+     * 若切 loading 就会把已有列表换成转圈再弹回来（闪一下）。静默刷新直接用新数据顶替。
+     */
+    fun refresh(silent: Boolean = false) {
         viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+            _state.update { it.copy(loading = !silent, error = null) }
             try {
                 if (smbMode) {
+                    // 真实 SMB 列表：一个文件夹里的视频文件（`:source:smb` 的 getItems 只扫一层）
+                    val src = source ?: error("数据源未就绪")
+                    val page = src.getItems(ItemQuery(libraryId = libraryId, limit = ITEMS_LIMIT))
+                    val videos = page.items.map { item ->
+                        SmbVideoItem(
+                            // 用**条目 id**（SMB 源内部是 URL 安全 Base64）而不是真实路径：
+                            // 真实路径带 `/`，拼进导航 route 会让 App 崩溃
+                            path = item.id,
+                            name = item.title + item.container?.let { ext -> ".$ext" }.orEmpty(),
+                            sizeBytes = item.sizeBytes ?: 0L,
+                            lastModified = item.dateCreated ?: 0L,
+                            item = item,
+                        )
+                    }
                     _state.update {
-                        it.copy(loading = false, smbVideos = LibraryDetailMock.smbVideos(libraryId), embyItems = emptyList())
+                        it.copy(loading = false, smbVideos = videos, embyItems = emptyList())
                     }
                 } else {
                     val src = source ?: error("数据源未就绪")
@@ -174,7 +208,8 @@ class LibraryDetailViewModel(
                     _state.update { it.copy(loading = false, embyItems = page.items, smbVideos = emptyList()) }
                 }
             } catch (t: Throwable) {
-                _state.update { it.copy(loading = false, error = t.message ?: "加载失败") }
+                // 静默刷新失败：眼前已经有列表，就别把它换成整页错误（下次进页面会重试）
+                if (!silent) _state.update { it.copy(loading = false, error = t.message ?: "加载失败") }
             }
         }
     }
@@ -202,6 +237,34 @@ class LibraryDetailViewModel(
             applyDetailFilter(st.embyItems, st.filter).map { it.id }
         }
         _state.update { it.copy(selection = it.selection.selectAll(all)) }
+    }
+
+    /**
+     * 档二：把选中的文件**加入 / 移出隐私**（`docs/隐私模式方案.md` §三）。
+     *
+     * 判定规则：选中项全都已是私有的 → 移出；否则全部加入。
+     * 普通模式下私有文件根本列不出来，所以「移出」只会在隐私模式里发生。
+     *
+     * 写库是「后台事实」，不受当前模式限制；写完立刻重扫列表 ——
+     * 普通模式下加入隐私的那几条会当场从网格消失（这正是预期）。
+     */
+    fun togglePrivate() {
+        val store = catalog ?: return
+        val st = _state.value
+        val selected = st.selection.ids
+        if (selected.isEmpty()) return
+        // 多选 id 是 `SmbVideoItem.path`（= 条目 id，URL 安全 Base64）；库存按**真实路径**索引
+        val paths = st.smbVideos.filter { it.path in selected }.mapNotNull { it.item?.path }
+        if (paths.isEmpty()) {
+            _state.update { it.copy(selection = it.selection.exit()) }
+            return
+        }
+        viewModelScope.launch {
+            val allPrivate = paths.all { store.entryOf(serverId, it)?.isPrivate == true }
+            runCatching { store.setPrivate(serverId, paths, !allPrivate) }
+            _state.update { it.copy(selection = it.selection.exit()) }
+            refresh()
+        }
     }
 
     /** 标记已看：乐观更新本地状态；服务端上报待接口补齐。 */
@@ -253,6 +316,11 @@ fun LibraryDetailScreen(
     onLongPress: (String) -> Unit,
     onToggleSelect: (String) -> Unit,
     onExitSelection: () -> Unit,
+    /** 档二：多选态下的「加入 / 移出隐私」（仅 SMB 文件列表显示）。 */
+    onTogglePrivate: () -> Unit = {},
+    canMarkPrivate: Boolean = false,
+    /** 隐私模式：右上角有全局「隐私」胶囊，顶栏右侧按钮需左移让位（BUG-5）。 */
+    privacyActive: Boolean = false,
     onSelectAll: () -> Unit,
     onMarkWatched: () -> Unit,
     onApplyFilter: (FilterState) -> Unit,
@@ -288,6 +356,10 @@ fun LibraryDetailScreen(
             onBack = if (selection.active) onExitSelection else onBack,
             onSelectAll = onSelectAll,
             onMarkWatched = onMarkWatched,
+            // 漏了这两个 = 档二的锁图标永远不出现（参数默认 false），设备上才发现
+            onTogglePrivate = onTogglePrivate,
+            canMarkPrivate = canMarkPrivate,
+            privacyActive = privacyActive,
             onShowFilter = { showFilterSheet = true },
         )
 
@@ -303,15 +375,23 @@ fun LibraryDetailScreen(
                 )
             }
             else -> LazyVerticalGrid(
-                columns = GridCells.Fixed(COLUMN_COUNT),
+                // 自适应列（UI 优化方案 L2）：原来 `Fixed(3)` 写死手机三列，
+                // 换平板 / 折叠屏展开态仍是三列 → 每列被拉得很宽、海报发虚。
+                // `Adaptive(92dp)` 实测：411dp 手机 = 3 列（与原来一致），
+                // 600dp 平板 = 5 列、800dp 折叠展开 = 7 列，无需再按屏宽写分支。
+                columns = GridCells.Adaptive(minSize = GRID_MIN_COLUMN.dp),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = Spacing.md.dp,
-                    end = Spacing.md.dp,
+                    // 左右 16dp = 首页标题基线（UI 优化方案 L3）：两页共用同一条左边线，
+                    // 来回切 tab 时标题与海报边缘不会左右错开。
+                    start = Dimens.pagePadding,
+                    end = Dimens.pagePadding,
                     top = Spacing.sm.dp,
-                    // 页面底部留白 100dp（用户 2026-10-24 定稿）；再叠加手势条高度，
-                    // 否则全面屏上最后一行会被系统手势条压住
-                    bottom = 100.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
+                    // 页面底部留白 100dp（用户 2026-10-24 定稿）。
+                    // **不再叠加 `navigationBars`**：本页是根级页面，外层 `BottomInsetScreen`
+                    // 已经 `.navigationBarsPadding()` 让过一次手势条，再叠一份就是双计，
+                    // 滚到底会多出约 25dp 空白（UI 优化方案 L4）。
+                    bottom = 100.dp,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(GRID_SPACING.dp),
                 verticalArrangement = Arrangement.spacedBy(GRID_SPACING.dp),
@@ -323,6 +403,7 @@ fun LibraryDetailScreen(
                             video = video,
                             selected = selected,
                             selectionMode = selection.active,
+                            loadImage = loadImage,
                             onClick = { if (selection.active) onToggleSelect(video.path) else onPlayPath(video.path) },
                             onLongClick = { onLongPress(video.path) },
                         )
@@ -447,6 +528,9 @@ private fun DetailTopBar(
     onBack: () -> Unit,
     onSelectAll: () -> Unit,
     onMarkWatched: () -> Unit,
+    onTogglePrivate: () -> Unit = {},
+    canMarkPrivate: Boolean = false,
+    privacyActive: Boolean = false,
     onShowFilter: () -> Unit,
 ) {
     val app = LocalAppColors.current
@@ -456,7 +540,12 @@ private fun DetailTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(start = Spacing.xs.dp, end = Spacing.sm.dp, top = Spacing.xs.dp, bottom = Spacing.xs.dp),
+            .padding(
+            start = Spacing.xs.dp,
+            end = if (privacyActive) Dimens.privacyBadgeReserved else Spacing.sm.dp,
+            top = Spacing.xs.dp,
+            bottom = Spacing.xs.dp,
+        ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircleIconButton(onClick = onBack) {
@@ -483,6 +572,13 @@ private fun DetailTopBar(
             }
         }
         if (selectionMode) {
+            if (canMarkPrivate) {
+                TopBarAction(
+                    enabled = anySelected,
+                    contentDescription = "加入或移出隐私",
+                    onClick = onTogglePrivate,
+                ) { tint -> LockIcon(tint = tint) }
+            }
             TopBarAction(
                 enabled = !allSelected,
                 contentDescription = "全选",
@@ -503,7 +599,7 @@ private fun DetailTopBar(
     }
 }
 
-/** 顶栏右侧图标按钮（40dp 圆形热区，与 CircleIconButton 视觉一致）。 */
+/** 顶栏右侧图标按钮（视觉 40dp、**热区 48dp**，与 `CircleIconButton` 同口径）。 */
 @Composable
 private fun TopBarAction(
     enabled: Boolean,
@@ -514,17 +610,48 @@ private fun TopBarAction(
     val app = LocalAppColors.current
     Box(
         modifier = Modifier
-            .size(40.dp)
+            .size(Dimens.touchTarget)
             .alpha(if (enabled) 1f else 0.35f)
             .clip(CircleShape)
             .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = null),
         contentAlignment = Alignment.Center,
     ) {
-        icon(app.text3)
+        Box(Modifier.size(Dimens.iconButton), contentAlignment = Alignment.Center) {
+            icon(app.text3)
+        }
     }
 }
 
 // ---- Emby 海报卡 ----
+
+/**
+ * 卡片底部「内缩进度条」（Emby 海报卡 / SMB 视频卡共用）。
+ *
+ * 内缩 8dp / 底距 4dp：贴底边画的话两端会被卡片 8dp 圆角切掉一截
+ * （用户 2026-10-24 提过，与首页继续观看是同一个坑）。
+ * 调用方负责传 `.align(Alignment.BottomStart)`，本组件只管尺寸与配色。
+ */
+@Composable
+private fun CardProgressBar(progress: Float, modifier: Modifier = Modifier) {
+    val app = LocalAppColors.current
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
+            .fillMaxWidth()
+            .height(3.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(app.surface3),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth(progress)
+                .height(3.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(scheme.primary),
+        )
+    }
+}
 
 /**
  * Emby 卡片：2:3 竖向海报 + 底部青柠绿进度条。
@@ -544,9 +671,8 @@ internal fun EmbyPosterCard(
     /** 播放进度（0..1）。默认取条目自身的续播占比；搜索结果可显式传入（与列表状态同源）。 */
     progress: Float = item.resumeFraction(),
 ) {
-    val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(CARD_CORNER.dp)
+    val shape = AppShape.card
     // 只有「看了一部分但没看完」才画进度条：0 = 没看过，1 = 已看完，都不需要提示
     val inProgress = progress > 0f && progress < 1f
 
@@ -591,26 +717,9 @@ internal fun EmbyPosterCard(
             )
         }
 
-        // 进度条内缩（用户 2026-10-24 修复：左右 8dp / 底 4dp）——
-        // 原来贴底边 + fillMaxWidth(progress)，两端被 8dp 圆角裁掉（与首页继续观看同一个坑）
+        // 进度条：与 SMB 视频卡共用同一组件（内缩口径见 [CardProgressBar]）
         if (inProgress) {
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
-                    .fillMaxWidth()
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(app.surface3),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(progress)
-                        .height(3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(scheme.primary),
-                )
-            }
+            CardProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomStart))
         }
 
         if (selected) {
@@ -637,9 +746,15 @@ internal fun EmbyPosterCard(
 // ---- SMB 视频卡 ----
 
 /**
- * SMB 卡片：16:9 深灰底 + 视频 icon 占位（抽帧缩略图可用后替换），底部渐变遮罩 + 文件名。
+ * SMB 卡片：抽帧缩略图（拿不到时退回「深灰底 + 视频 icon」），底部渐变遮罩 + 文件名。
+ *
+ * 卡片尺寸与 Emby 海报卡**完全一致**（2:3）：同一个 3 列网格里两套源必须同宽同高。
+ * 16:9 的抽帧不裁切 —— 用「模糊放大底 + 居中完整画面」的三层画法填满卡片，见下方实现。
  *
  * 全部是视频、没有文件夹 —— SMB 的第一层文件夹在首页已被映射成库。
+ *
+ * 缩略图与 Emby 海报走**同一条** `loadImage` 链路：`source.image()` 对 SMB 恒为 None，
+ * 于是自动落到调用方注入的 `LocalThumbnailProvider`（见 `ThumbnailFallback.kt`）。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -647,32 +762,83 @@ internal fun SmbVideoCard(
     video: SmbVideoItem,
     selected: Boolean,
     selectionMode: Boolean,
+    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(CARD_CORNER.dp)
+    val shape = AppShape.card
+
+    // 续播进度（2026-10-31）：`source:smb` 的 `getItems` 早已把 Room 断点写进
+    // `userData.resumePositionTicks`，并且 `durationTicks` 取了探测到的时长 ——
+    // 之前只是**卡片没画**，所以媒体库里看不到进度条。
+    // 时长缺失（`durationTicks = 0`，还没探测过）时 `resumeFraction()` 返回 0，不画，正常。
+    val progress = video.item?.resumeFraction() ?: 0f
+    // 只有「看了一部分但没看完」才画：0 = 没看过，1 = 已看完，都不需要提示
+    val inProgress = progress > 0f && progress < 1f
+
+    // 抽帧是 suspend + 带闸门的：只在卡片真正进入组合时才触发（网格只组合可见项）
+    val dto = video.item
+    val image: ImageSource = if (dto != null) {
+        rememberHomeImage(dto.id, ImageKind.THUMB) { loadImage(dto, ImageKind.THUMB) }
+    } else {
+        ImageSource.None
+    }
+    val request = rememberImageRequest(image)
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
+            // **与 Emby 海报卡同尺寸（2:3）**：两套源共用一个 3 列网格，卡片必须同宽同高，
+            // 否则 SMB 那一屏会又扁又稀（用户 2026-10-25 反馈「和 emby 不一致」）。
+            // 16:9 的抽帧不裁切，改成上下留白 + 模糊底（见下面的三层画法）。
+            .aspectRatio(2f / 3f)
             .clip(shape)
             .background(app.surface2)
             .then(if (selected) Modifier.border(2.dp, scheme.primary, shape) else Modifier)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        // 视频占位：居中图标（LocalThumbnailProvider 抽帧可用后换成缩略图）
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            VideoIcon(
-                tint = app.text3.copy(alpha = 0.7f),
-                modifier = Modifier.size(30.dp),
+        if (request != null) {
+            // ① 底：同一帧放大裁切 + 模糊 + 压暗 —— 给 16:9 画面垫一层「海报底」，
+            //    不然 2:3 卡片上下会露出大片纯色。
+            //    `blur` 在 API < 31 上是 no-op，所以②的压暗层不是装饰，是那种机型的兜底。
+            AsyncImage(
+                model = request,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(18.dp)
+                    .alpha(0.55f),
             )
+            // ② 压暗
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)))
+            // ③ 前：完整画面（Fit，**不裁切** —— 视频帧裁掉一半就认不出内容了）
+            AsyncImage(
+                model = request,
+                contentDescription = video.name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            // 没有缩略图（AVI 等抽不出帧的容器 / 还没抽出来）：视频占位图。
+            // 渐变底 + 居中常见视频图标（不带首字），保证无图卡片也有清晰占位（2026-10-30）。
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Brush.linearGradient(listOf(app.surface2, app.surface3))),
+                contentAlignment = Alignment.Center,
+            ) {
+                VideoIcon(
+                    tint = app.text3.copy(alpha = 0.6f),
+                    modifier = Modifier.size(44.dp),
+                )
+            }
         }
 
-        // 底部渐变遮罩 + 文件名（最多两行省略）
+        // 底部渐变遮罩 + 文件名（与 Emby 卡的标题层同一套尺寸：10/18/8dp + labelMedium）
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -683,15 +849,26 @@ internal fun SmbVideoCard(
                         1f to Color.Black.copy(alpha = 0.65f),
                     ),
                 )
-                .padding(horizontal = 8.dp, vertical = 6.dp),
+                .padding(
+                    start = 10.dp,
+                    end = 10.dp,
+                    top = 18.dp,
+                    // 有进度条时文字抬高，给「内缩进度条」让位（与 Emby 卡同一口径）
+                    bottom = if (inProgress) 14.dp else 8.dp,
+                ),
         ) {
             Text(
                 text = video.name,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        // 续播进度条：与 Emby 海报卡同一位置、同一配色（2026-10-31 补上，此前只画了封面）
+        if (inProgress) {
+            CardProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomStart))
         }
 
         if (selected) {
@@ -805,32 +982,6 @@ private fun SelectAllIcon(
     }
 }
 
-/** 视频文件（圆角矩形 + 播放三角）。 */
-@Composable
-private fun VideoIcon(
-    tint: Color,
-    modifier: Modifier = Modifier.defaultIconSize(),
-) {
-    androidx.compose.foundation.Canvas(modifier) {
-        val stroke = size.height / 11f
-        val rect = androidx.compose.ui.geometry.CornerRadius(size.height * 0.16f)
-        drawRoundRect(
-            color = tint,
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.2f),
-            size = androidx.compose.ui.geometry.Size(size.width * 0.8f, size.height * 0.6f),
-            cornerRadius = rect,
-            style = Stroke(width = stroke, join = StrokeJoin.Round),
-        )
-        val triangle = Path().apply {
-            moveTo(size.width * 0.44f, size.height * 0.38f)
-            lineTo(size.width * 0.62f, size.height * 0.5f)
-            lineTo(size.width * 0.44f, size.height * 0.62f)
-            close()
-        }
-        drawPath(triangle, tint)
-    }
-}
-
 // ---- Mock（SMB 源未实现；详情页的 SMB 模式用它出数） ----
 
 internal object LibraryDetailMock {
@@ -912,11 +1063,19 @@ private fun LibraryDetailSmbPreview() {
 
 // ---- 常量 ----
 
-/** 网格列数：Emby 与 SMB 统一一行 3 个（用户 2026-10-24 强制；不要 Adaptive——一加上会算成 2 列）。 */
-private const val COLUMN_COUNT = 3
+/**
+ * 网格最小列宽（`GridCells.Adaptive`）。
+ *
+ * 手机仍是一行 3 个（411dp 屏：`(379+8)/(92+8) = 3.87` → 3 列，与 `Fixed(3)` 完全一致），
+ * 平板 / 折叠屏展开态自动加列。
+ *
+ * ⚠️ 不要把它调回 132dp：那个值在 411dp 屏上算出 **2 列**（`(379+8)/(132+8) = 2.76`），
+ * 正是 2026-10-24「一加 Adaptive 会变成 2 列」结论的由来 —— 问题在列宽取值，不在 Adaptive。
+ */
+private const val GRID_MIN_COLUMN = 92
 
 /** 网格单元间距（用户 2026-10-24 定稿 8dp）。 */
 private const val GRID_SPACING = 8
 
-/** 海报 / 视频卡圆角。 */
-private const val CARD_CORNER = 8
+/** 海报 / 视频卡圆角统一走 `AppShape.card`（12dp）。 */
+

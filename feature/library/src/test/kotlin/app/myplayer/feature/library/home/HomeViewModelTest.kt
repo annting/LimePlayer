@@ -3,11 +3,14 @@
 package app.myplayer.feature.library.home
 
 import app.myplayer.core.datastore.InMemorySettingsStore
+import app.myplayer.core.model.ImageKind
+import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaLibrary
 import app.myplayer.core.model.SourceType
 import app.myplayer.feature.library.MainDispatcherRule
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.Rule
 import org.junit.Test
@@ -176,6 +179,26 @@ class HomeViewModelTest {
         assertThat(vm.state.value.dynamicSections.map { it.id }).containsExactly("lib-tv")
     }
 
+    /**
+     * 取消不是失败。
+     *
+     * 换源 / 退出隐私重拉都会 `loadJob.cancel()`，旧实现用 `runCatching` 把
+     * `CancellationException` 也当异常收下 → `error = "StandaloneCoroutine was cancelled"`
+     * → 首页整屏红字「无法连接到服务器」（2026-10-29 真机：退出隐私后必现）。
+     */
+    @Test
+    fun `加载被取消时不落错误态`() {
+        val vm = HomeViewModel(
+            MockHomeData.EMBY_ID,
+            MockHomeData.servers,
+            CancelledHomeDataSource(),
+            HomeSettingsRepository(settings),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertThat(vm.state.value.error).isNull()
+    }
+
     /** 库横滑需要至少一个条目，否则 `ServerHomeDataSource` 会把空库过滤掉。 */
     private fun dto(id: String) = MediaItemDto(
         id = id,
@@ -184,4 +207,13 @@ class HomeViewModelTest {
         title = id,
         hasPoster = true,
     )
+}
+
+/** 取数时就收到取消信号（等价于 load 途中 `loadJob.cancel()` 传下来的 `CancellationException`）。 */
+private class CancelledHomeDataSource : HomeDataSource {
+    override val sourceKey: Any get() = this
+
+    override suspend fun load(serverId: String): HomeSnapshot = throw CancellationException("cancelled")
+
+    override suspend fun image(item: MediaItemDto, kind: ImageKind): ImageSource = ImageSource.None
 }

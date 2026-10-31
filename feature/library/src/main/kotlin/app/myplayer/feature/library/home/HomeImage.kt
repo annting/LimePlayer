@@ -54,25 +54,7 @@ internal fun HomeImage(
     modifier: Modifier = Modifier,
 ) {
     val app = LocalAppColors.current
-    val context = LocalContext.current
-    val request: ImageRequest? = remember(source, context) {
-        when (source) {
-            is ImageSource.Remote -> ImageRequest.Builder(context)
-                .data(source.url)
-                .httpHeaders( // 令牌走请求头，不进 URL / 缓存键
-                    NetworkHeaders.Builder().apply {
-                        source.headers.forEach { (k, v) -> set(k, v) }
-                    }.build()
-                )
-                .crossfade(true)
-                .build()
-            is ImageSource.Local -> ImageRequest.Builder(context)
-                .data(source.uri)
-                .crossfade(true)
-                .build()
-            ImageSource.None -> null
-        }
-    }
+    val request: ImageRequest? = rememberImageRequest(source)
 
     Box(
         modifier = modifier.background(
@@ -92,6 +74,35 @@ internal fun HomeImage(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+        }
+    }
+}
+
+/**
+ * [ImageSource] → Coil [ImageRequest]；`None` 返回 null（调用方自己决定占位长什么样）。
+ *
+ * 抽出来给 SMB 视频卡复用：那边不要「渐变 + 首字」这层占位，只要一张铺满的缩略图，
+ * 但请求构造（令牌走请求头、crossfade）必须与海报完全一致，否则同一张图会进两份缓存。
+ */
+@Composable
+internal fun rememberImageRequest(source: ImageSource): ImageRequest? {
+    val context = LocalContext.current
+    return remember(source, context) {
+        when (source) {
+            is ImageSource.Remote -> ImageRequest.Builder(context)
+                .data(source.url)
+                .httpHeaders( // 令牌走请求头，不进 URL / 缓存键
+                    NetworkHeaders.Builder().apply {
+                        source.headers.forEach { (k, v) -> set(k, v) }
+                    }.build()
+                )
+                .crossfade(true)
+                .build()
+            is ImageSource.Local -> ImageRequest.Builder(context)
+                .data(source.uri)
+                .crossfade(true)
+                .build()
+            ImageSource.None -> null
         }
     }
 }

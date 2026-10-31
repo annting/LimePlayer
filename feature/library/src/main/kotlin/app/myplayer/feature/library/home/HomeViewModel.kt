@@ -6,6 +6,7 @@ import app.myplayer.core.datastore.HomeModuleSettings
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,10 +36,15 @@ import kotlinx.coroutines.launch
  * @param homeSettings 首页设置的读写入口（与设置页共用同一份 DataStore 存储）。
  */
 class HomeViewModel(
-    serverId: String?,
+    private val serverId: String?,
     private val servers: List<HomeServerOption>,
     data: HomeDataSource,
     homeSettings: HomeSettingsRepository,
+    /**
+     * 档二库存（2026-10-29）：首页卡片「设为 / 取消隐私」与左上角标志的数据源。
+     * null = 未接（Emby 形态 / 预览 / 单测）→ 卡片不出三点菜单。
+     */
+    private val catalog: app.myplayer.core.model.FileCatalogStore? = null,
 ) : ViewModel() {
 
     private var data: HomeDataSource = data
@@ -122,32 +128,88 @@ class HomeViewModel(
             _state.update {
                 if (initial) it.copy(isLoading = true, error = null) else it.copy(isRefreshing = true, error = null)
             }
-            runCatching { data.load(target) }
-                .onSuccess { snapshot ->
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            error = null,
-                            serverName = snapshot.serverName.ifBlank { it.serverName },
-                            sourceType = snapshot.sourceType,
-                            continueWatchingList = snapshot.continueWatching,
-                            myLibrariesOrFolders = snapshot.myLibrariesOrFolders,
-                            dynamicSections = snapshot.dynamicSections,
-                            recentlyAddedList = snapshot.recentlyAdded,
-                        )
-                    }
+            try {
+                val snapshot = data.load(target)
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        error = null,
+                        serverName = snapshot.serverName.ifBlank { it.serverName },
+                        sourceType = snapshot.sourceType,
+                        continueWatchingList = snapshot.continueWatching,
+                        myLibrariesOrFolders = snapshot.myLibrariesOrFolders,
+                        dynamicSections = snapshot.dynamicSections,
+                        recentlyAddedList = snapshot.recentlyAdded,
+                        privateKeys = privateKeysOf(snapshot),
+                    )
                 }
-                .onFailure { e ->
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            isRefreshing = false,
-                            error = e.message?.takeIf(String::isNotBlank) ?: "网络异常，请检查与服务器的连接",
-                        )
-                    }
+            } catch (c: CancellationException) {
+                // **取消不是失败**。换源 / 退出隐私重拉都会 `loadJob.cancel()`，
+                // 用 `runCatching` 会把 CancellationException 一并写成失败态，
+                // 界面就出现「无法连接到服务器 · StandaloneCoroutine was cancelled」
+                // （2026-10-29 真机：退出隐私后首页直接红字报错）。状态交给接替的那次 load。
+                throw c
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isRefreshing = false,
+                        error = e.message?.takeIf(String::isNotBlank) ?: "网络异常，请检查与服务器的连接",
+                    )
                 }
+            }
         }
+    }
+
+    /**
+     * 首页卡片的三点菜单（2026-10-29）：把一张卡设为 / 取消隐私（档二）。
+     *
+     * - 文件夹卡：[key] 是 `smb:<相对路径>` → 写目录标记，递归盖住整棵子树；
+     * - 视频卡：[key] 是真实文件路径 → 写文件标记。
+     * 当前态从库存现查（不要信 `privateKeys` 快照：连续点两张卡时第二张的快照已过期）。
+     * 成功后 [refresh]：普通模式下「设为隐私」的卡当场消失，这就是反馈。
+     */
+    fun toggleCardPrivate(key: String, isFolder: Boolean) {
+        val store = catalog ?: return
+        val sid = serverId ?: return
+        viewModelScope.launch {
+            runCatching {
+                if (isFolder) {
+                    val path = key.removePrefix(FOLDER_ID_PREFIX)
+                    val isPrivate = path in store.privateFolders(sid)
+                    store.setFolderPrivate(sid, listOf(path), !isPrivate)
+                } else {
+                    val isPrivate = store.entryOf(sid, key)?.isPrivate == true
+                    store.setPrivate(sid, listOf(key), !isPrivate)
+                }
+            }.onSuccess { refresh() }
+        }
+    }
+
+    /**
+     * 本屏所有「被标了隐私」的 key：文件真实路径 + 文件夹相对路径（`smb:` 前缀剥掉）。
+     * 只在 SMB/LOCAL 形态下查（Emby 没有档二，卡片也不出菜单）。
+     */
+    private suspend fun privateKeysOf(snapshot: HomeSnapshot): Set<String> {
+        val store = catalog ?: return emptySet()
+        val sid = serverId ?: return emptySet()
+        if (snapshot.sourceType != HomeSourceType.SMB) return emptySet()
+        val keys = buildList {
+            snapshot.continueWatching.forEach { it.path?.let(::add) }
+            snapshot.recentlyAdded.forEach { it.path?.let(::add) }
+            snapshot.dynamicSections.forEach { section -> section.items.forEach { it.path?.let(::add) } }
+            // SMB 形态下「我的文件夹」全部是文件夹卡（isFolder 在数据源里未显式置 true，
+            // 渲染时靠 folderMode 兜底）—— 这里直接按库 id 剥前缀当目录路径收集
+            snapshot.myLibrariesOrFolders.forEach { add(it.id.removePrefix(FOLDER_ID_PREFIX)) }
+        }
+        if (keys.isEmpty()) return emptySet()
+        return runCatching { store.privatePaths(sid, keys) }.getOrDefault(emptySet())
+    }
+
+    private companion object {
+        /** 文件夹卡 id 前缀（`ServerHomeDataSource` 用库 id 直接当卡 id）。 */
+        const val FOLDER_ID_PREFIX = "smb:"
     }
 }
 

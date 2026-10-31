@@ -2,6 +2,7 @@ package app.myplayer.feature.library.home
 
 import app.myplayer.core.datastore.HomeModuleSettings
 import app.myplayer.core.model.MediaItemDto
+import app.myplayer.core.model.SourceType
 import app.myplayer.core.model.Ticks
 
 /**
@@ -53,6 +54,11 @@ data class HomeUiState(
     /** 顶部「切换来源」下拉的候选；为空且 [serverName] 也为空 → 全屏空态 1。 */
     val servers: List<HomeServerOption> = emptyList(),
     val selectedServerId: String? = null,
+    /**
+     * 档二（2026-10-29）：本屏内被标了隐私的 key 集合 —— 文件真实路径 + 文件夹相对路径
+     * （`smb:` 前缀剥掉）。仅在 SMB/LOCAL 形态下非空；卡片据此画左上角标志与菜单项文案。
+     */
+    val privateKeys: Set<String> = emptySet(),
 ) {
     /** 全屏空态 1：一个服务器都没配。 */
     val hasNoServer: Boolean get() = servers.isEmpty() && serverName == null
@@ -101,6 +107,8 @@ data class HomeServerOption(
     val id: String,
     val name: String,
     val baseUrl: String = "",
+    /** 服务器类型：决定下拉里那枚小 logo（Emby 绿 / Jellyfin 紫 / 飞牛 橙 / SMB 蓝）。 */
+    val sourceType: SourceType = SourceType.EMBY,
 )
 
 /**

@@ -118,9 +118,18 @@ object MockHomeData {
     const val SMB_NAME = "客厅 NAS · SMB"
 
     val servers = listOf(
-        HomeServerOption(EMBY_ID, EMBY_NAME, "http://192.168.31.15:8096"),
-        HomeServerOption(FNOS_ID, FNOS_NAME, "http://192.168.31.16:5666"),
-        HomeServerOption(SMB_ID, SMB_NAME, "smb://192.168.31.20/media"),
+        HomeServerOption(
+            EMBY_ID, EMBY_NAME, "http://192.168.31.15:8096",
+            sourceType = app.myplayer.core.model.SourceType.EMBY,
+        ),
+        HomeServerOption(
+            FNOS_ID, FNOS_NAME, "http://192.168.31.16:5666",
+            sourceType = app.myplayer.core.model.SourceType.FNOS,
+        ),
+        HomeServerOption(
+            SMB_ID, SMB_NAME, "smb://192.168.31.20/media",
+            sourceType = app.myplayer.core.model.SourceType.SMB,
+        ),
     )
 
     // ---- Emby（主数据） ----

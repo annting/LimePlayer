@@ -24,6 +24,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.DropdownMenu
@@ -75,8 +77,12 @@ import app.myplayer.core.designsystem.components.CheckIcon
 import app.myplayer.core.designsystem.components.ChevronDownIcon
 import app.myplayer.core.designsystem.components.ChevronRightIcon
 import app.myplayer.core.designsystem.components.EmptyState
+import app.myplayer.core.designsystem.components.LockIcon
+import app.myplayer.core.designsystem.components.LockOpenIcon
+import app.myplayer.core.designsystem.components.MoreVerticalIcon
 import app.myplayer.core.designsystem.components.PlayIcon
 import app.myplayer.core.designsystem.components.ServerIcon
+import app.myplayer.core.designsystem.components.VideoIcon
 import app.myplayer.core.designsystem.components.ShimmerBox
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
@@ -134,8 +140,20 @@ fun HomeScreen(
     onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
     /** 「首页内容已隐藏」空态的按钮：跳到设置 → 首页设置。 */
     onGoToHomeSettings: () -> Unit,
+    /**
+     * 卡片三点菜单 →「设为 / 取消隐私」（档二，2026-10-29）。
+     * [key]：文件夹卡传库 id（`smb:<相对路径>`），视频卡传真实文件路径。
+     * 仅 SMB/LOCAL 形态下卡片才会出三点（Emby 无档二）。
+     */
+    onToggleCardPrivate: (key: String, isFolder: Boolean) -> Unit = { _, _ -> },
+    /**
+     * 是否处于隐私模式。三点菜单（设为 / 取消隐私）与隐私标志**只在隐私模式显示**，
+     * 普通模式不暴露任何隐私管理入口（2026-10-30 修复：此前只判 sourceType，导致普通模式也出三点）。
+     */
+    privacyActive: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
+    val canManagePrivate = privacyActive && state.sourceType == HomeSourceType.SMB
     Column(modifier.fillMaxSize()) {
         HomeTopBar(
             serverName = state.serverName,
@@ -191,6 +209,8 @@ fun HomeScreen(
                         onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
                         onOpenLibrary = onOpenLibrary,
+                        canManagePrivate = canManagePrivate,
+                        onToggleCardPrivate = onToggleCardPrivate,
                     )
                 }
             }
@@ -211,6 +231,8 @@ private fun HomeTopBar(
     val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
     var expanded by remember { mutableStateOf(false) }
+    // 当前来源的类型（决定顶栏那枚小 logo）；未连接时为 null，不画
+    val selected = servers.firstOrNull { it.id == selectedServerId }
 
     Row(
         modifier = Modifier
@@ -229,6 +251,10 @@ private fun HomeTopBar(
                     .padding(horizontal = Spacing.xs.dp, vertical = Spacing.sm.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (selected != null) {
+                    ServerLogo(selected.sourceType, size = 22.dp)
+                    Spacer(Modifier.width(Spacing.sm.dp))
+                }
                 Text(
                     text = serverName ?: "未连接服务器",
                     style = MaterialTheme.typography.titleMedium,
@@ -246,7 +272,8 @@ private fun HomeTopBar(
             DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                modifier = Modifier.width(228.dp),
+                // 带 logo 后文字区变窄：宽度从 228 加到 252，长服务器名不至于被截得太狠
+                modifier = Modifier.width(252.dp),
                 shape = AppShape.card,
                 containerColor = scheme.surfaceContainerHigh,
                 tonalElevation = 0.dp,
@@ -254,15 +281,15 @@ private fun HomeTopBar(
                 border = BorderStroke(Dimens.hairline, app.border),
             ) {
                 servers.forEach { server ->
-                    val selected = server.id == selectedServerId
+                    val isSelected = server.id == selectedServerId
                     DropdownMenuItem(
                         text = {
                             Column {
                                 Text(
                                     text = server.name,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    color = if (selected) scheme.primary else scheme.onSurface,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isSelected) scheme.primary else scheme.onSurface,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -277,11 +304,13 @@ private fun HomeTopBar(
                                 }
                             }
                         },
+                        // 每台服务器前面挂它自己的类型 logo（Emby/Jellyfin/飞牛/SMB 各不相同）
+                        leadingIcon = { ServerLogo(server.sourceType, size = 26.dp) },
                         onClick = {
                             expanded = false
-                            if (!selected) onSelectServer(server.id)
+                            if (!isSelected) onSelectServer(server.id)
                         },
-                        trailingIcon = if (selected) {
+                        trailingIcon = if (isSelected) {
                             { CheckIcon(tint = scheme.primary, modifier = Modifier.size(16.dp)) }
                         } else {
                             null
@@ -292,6 +321,9 @@ private fun HomeTopBar(
                 }
             }
         }
+
+        // 右上角只放切换器本身：观看历史入口按需求删掉了（页面一并移除）
+        Spacer(Modifier.weight(1f))
     }
 }
 
@@ -304,6 +336,9 @@ private fun HomeContent(
     onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
     onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
+    /** SMB/LOCAL 形态才为 true：卡片右上角出三点菜单。 */
+    canManagePrivate: Boolean,
+    onToggleCardPrivate: (key: String, isFolder: Boolean) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -324,6 +359,9 @@ private fun HomeContent(
                         loadImage = loadImage,
                         onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
+                        canManagePrivate = canManagePrivate,
+                        privateKeys = state.privateKeys,
+                        onToggleCardPrivate = onToggleCardPrivate,
                     )
                 }
             }
@@ -338,6 +376,9 @@ private fun HomeContent(
                         folderMode = smb,
                         loadImage = loadImage,
                         onOpenLibrary = onOpenLibrary,
+                        canManagePrivate = canManagePrivate,
+                        privateKeys = state.privateKeys,
+                        onToggleCardPrivate = onToggleCardPrivate,
                     )
                 }
             }
@@ -353,6 +394,9 @@ private fun HomeContent(
                         items = library.items,
                         loadImage = loadImage,
                         onOpenDetail = onOpenDetail,
+                        canManagePrivate = canManagePrivate,
+                        privateKeys = state.privateKeys,
+                        onToggleCardPrivate = onToggleCardPrivate,
                     )
                 }
             }
@@ -365,6 +409,9 @@ private fun HomeContent(
                         items = state.recentlyAddedList,
                         loadImage = loadImage,
                         onOpenDetail = onOpenDetail,
+                        canManagePrivate = canManagePrivate,
+                        privateKeys = state.privateKeys,
+                        onToggleCardPrivate = onToggleCardPrivate,
                     )
                 }
             }
@@ -425,9 +472,13 @@ private fun HomeSection(
  * 这样卡片能滑到屏幕边缘之外，视觉上才是「无限滑」而不是「框在页面里」。
  */
 @Composable
-private fun BounceRow(content: LazyListScope.() -> Unit) {
+private fun BounceRow(
+    state: LazyListState = rememberLazyListState(),
+    content: LazyListScope.() -> Unit,
+) {
     val bounce = rememberBounceOverscrollState()
     LazyRow(
+        state = state,
         modifier = Modifier
             .fillMaxWidth()
             .bounceOverscroll(bounce),
@@ -464,6 +515,14 @@ fun StandardHorizontalCard(
     onPlay: (() -> Unit)? = null,
     /** 非空时用「深灰底 + 居中图标」代替封面（SMB 文件夹卡）。 */
     centeredIcon: (@Composable () -> Unit)? = null,
+    /**
+     * 档二（2026-10-29）：非 null = 右上角出三点菜单，点开「设为 / 取消隐私」；
+     * [isPrivate] 同时决定左上角的标志与菜单文案。Emby 卡传 null（无档二）。
+     */
+    onTogglePrivate: (() -> Unit)? = null,
+    isPrivate: Boolean = false,
+    /** 视频卡（非文件夹、无封面）：无预览图时用「渐变底 + 视频图标」占位，而非首字（2026-10-30）。 */
+    videoPlaceholder: Boolean = false,
 ) {
     val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
@@ -478,9 +537,21 @@ fun StandardHorizontalCard(
     ) {
         if (centeredIcon != null) {
             Box(
-                Modifier.fillMaxSize().background(app.surface2),
+                Modifier
+                    .fillMaxSize()
+                    .background(Brush.linearGradient(listOf(app.surface2, app.surface3))),
                 contentAlignment = Alignment.Center,
             ) { centeredIcon() }
+        } else if (videoPlaceholder && image is ImageSource.None) {
+            // 视频卡无预览图（AVI 等抽不出帧）：渐变底 + 居中视频图标（无首字）
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Brush.linearGradient(listOf(app.surface2, app.surface3))),
+                contentAlignment = Alignment.Center,
+            ) {
+                VideoIcon(tint = app.text3.copy(alpha = 0.6f), modifier = Modifier.size(44.dp))
+            }
         } else {
             HomeImage(source = image, title = title, modifier = Modifier.fillMaxSize())
         }
@@ -561,6 +632,58 @@ fun StandardHorizontalCard(
                 )
             }
         }
+
+        // 档二：左上角隐私标志（半透明黑底小胶囊，白描边锁）
+        if (isPrivate) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clip(AppShape.control)
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LockIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(12.dp))
+            }
+        }
+
+        // 档二：右上角三点菜单（点开只有一项：设为 / 取消隐私）
+        if (onTogglePrivate != null) {
+            var menuOpen by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.align(Alignment.TopEnd)) {
+                Box(
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .size(30.dp)
+                        .clip(AppShape.circle)
+                        .background(Color.Black.copy(alpha = 0.45f))
+                        .clickable { menuOpen = true },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    MoreVerticalIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(if (isPrivate) "取消隐私" else "设为隐私") },
+                        leadingIcon = {
+                            if (isPrivate) {
+                                LockOpenIcon(tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                            } else {
+                                LockIcon(tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(18.dp))
+                            }
+                        },
+                        onClick = {
+                            menuOpen = false
+                            onTogglePrivate()
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -572,18 +695,40 @@ private fun ContinueWatchingRow(
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
+    canManagePrivate: Boolean,
+    privateKeys: Set<String>,
+    onToggleCardPrivate: (key: String, isFolder: Boolean) -> Unit,
 ) {
-    BounceRow {
+    // 卡宽按屏宽算一次，整行统一（骨架屏与真卡同宽，数据到位不跳动）
+    val cardW = heroCardWidth(items.size)
+    val listState = rememberLazyListState()
+    // 数据更新（新续播排到最前）→ 滚回最左：否则第一个条目在视口外，看得见列表却看不见它
+    //（2026-10-31 用户反馈：播放返回后手动刷新，新条目在第一个但横滑位置没回来）
+    val firstId = items.firstOrNull()?.id
+    LaunchedEffect(firstId) {
+        if (firstId != null) listState.animateScrollToItem(0)
+    }
+    BounceRow(state = listState) {
         items(items = items, key = { it.id }) { item ->
+            val manageKey = item.path ?: item.id
             StandardHorizontalCard(
                 title = item.continueTitle(),
                 subtitle = item.remainingWatchText(),
                 image = rememberHomeImage(item.id, ImageKind.THUMB) {
                     loadImage(item, ImageKind.THUMB)
                 },
-                progress = item.progressFraction(),
+                // 只在「看了一部分」时传非 null：0f 会画出空轨道并白占文字位
+                progress = item.progressFraction().takeIf { it > 0f && it < 1f },
                 onPlay = { onPlay(item) },
                 onClick = { onOpenDetail(item) },
+                width = cardW,
+                onTogglePrivate = if (canManagePrivate) {
+                    { onToggleCardPrivate(manageKey, false) }
+                } else {
+                    null
+                },
+                isPrivate = canManagePrivate && manageKey in privateKeys,
+                videoPlaceholder = true,
             )
         }
     }
@@ -610,11 +755,19 @@ private fun MyLibrariesRow(
     folderMode: Boolean,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
+    canManagePrivate: Boolean,
+    privateKeys: Set<String>,
+    onToggleCardPrivate: (key: String, isFolder: Boolean) -> Unit,
 ) {
     val app = LocalAppColors.current
+    val cardW = heroCardWidth(libraries.size)
     BounceRow {
         items(items = libraries, key = { "mylib-${it.id}" }) { library ->
             val asFolder = folderMode || library.isFolder
+            // 文件夹卡的可标隐私 key = 库 id 剥掉 `smb:` 前缀后的相对路径；
+            // 非文件夹卡（Emby 库）没有档二，不出菜单
+            val manageKey = library.id.removePrefix("smb:")
+            val manage = canManagePrivate && asFolder
             StandardHorizontalCard(
                 title = library.name,
                 subtitle = if (asFolder) {
@@ -631,13 +784,16 @@ private fun MyLibrariesRow(
                         }
                     } ?: ImageSource.None
                 },
-                // 文件夹卡：深灰底 + 居中图标（不加载封面）
+                // 文件夹卡：渐变底 + 居中图标（与视频无图占位同一套底色/图标尺寸，不加载封面）
                 centeredIcon = if (asFolder) {
-                    { FolderIcon(tint = app.text3, modifier = Modifier.size(34.dp)) }
+                    { FolderIcon(tint = app.text3.copy(alpha = 0.6f), modifier = Modifier.size(44.dp)) }
                 } else {
                     null
                 },
                 onClick = { onOpenLibrary(library.id, library.name, folderMode || library.isFolder) },
+                width = cardW,
+                onTogglePrivate = manage.takeIf { it }?.let { { onToggleCardPrivate(manageKey, true) } },
+                isPrivate = manage && manageKey in privateKeys,
             )
         }
     }
@@ -650,15 +806,32 @@ private fun LibraryItemsRow(
     items: List<MediaItemDto>,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onOpenDetail: (MediaItemDto) -> Unit,
+    canManagePrivate: Boolean,
+    privateKeys: Set<String>,
+    onToggleCardPrivate: (key: String, isFolder: Boolean) -> Unit,
 ) {
+    val cardW = heroCardWidth(items.size)
     BounceRow {
         items(items = items, key = { it.id }) { item ->
+            val manageKey = item.path ?: item.id
             StandardHorizontalCard(
                 title = item.title,
+                // 续播进度条（2026-10-31）：`StandardHorizontalCard` 早就支持 progress，
+                // 动态库这处调用漏传 → 看过的片子在这一行里永远没有进度条。
+                // 只在「看了一部分」时传非 null：0 会画出空轨道（一条灰线）并白占文字位。
+                progress = item.progressFraction().takeIf { it > 0f && it < 1f },
                 image = rememberHomeImage(item.id, ImageKind.THUMB) {
                     loadImage(item, ImageKind.THUMB)
                 },
                 onClick = { onOpenDetail(item) },
+                width = cardW,
+                onTogglePrivate = if (canManagePrivate) {
+                    { onToggleCardPrivate(manageKey, false) }
+                } else {
+                    null
+                },
+                isPrivate = canManagePrivate && manageKey in privateKeys,
+                videoPlaceholder = true,
             )
         }
     }
@@ -671,15 +844,30 @@ private fun RecentlyAddedRow(
     items: List<MediaItemDto>,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onOpenDetail: (MediaItemDto) -> Unit,
+    canManagePrivate: Boolean,
+    privateKeys: Set<String>,
+    onToggleCardPrivate: (key: String, isFolder: Boolean) -> Unit,
 ) {
+    val cardW = heroCardWidth(items.size)
     BounceRow {
         items(items = items, key = { "recent-${it.id}" }) { item ->
+            val manageKey = item.path ?: item.id
             StandardHorizontalCard(
                 title = item.title,
+                // 同上（动态库）：最近添加的卡片也要看得到续播进度
+                progress = item.progressFraction().takeIf { it > 0f && it < 1f },
                 image = rememberHomeImage(item.id, ImageKind.THUMB) {
                     loadImage(item, ImageKind.THUMB)
                 },
                 onClick = { onOpenDetail(item) },
+                width = cardW,
+                onTogglePrivate = if (canManagePrivate) {
+                    { onToggleCardPrivate(manageKey, false) }
+                } else {
+                    null
+                },
+                isPrivate = canManagePrivate && manageKey in privateKeys,
+                videoPlaceholder = true,
             )
         }
     }
@@ -690,6 +878,8 @@ private fun RecentlyAddedRow(
 /** 首屏骨架：4 个模块 × （标题条 + 3 张 16:9 占位卡），尺寸与真卡片一致，数据到位不跳动。 */
 @Composable
 private fun HomeSkeleton() {
+    // 骨架屏固定每行 3 张，所以永远按「多卡」口径取宽度（不能走单卡满宽分支，否则数据到位会跳一下）
+    val cardW = heroCardWidth(3)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
@@ -714,7 +904,7 @@ private fun HomeSkeleton() {
                 ) {
                     repeat(3) {
                         ShimmerBox(
-                            Modifier.width(CardWidth).height(CardWidth * 9f / 16f),
+                            Modifier.width(cardW).height(cardW * 9f / 16f),
                             cornerRadius = 12.dp,
                         )
                     }
@@ -872,11 +1062,35 @@ private fun OfflineIcon(tint: Color) {
 
 // ---- 尺寸 ----
 
-/** 首页统一的 16:9 卡宽（改这一处即可整体缩放）。 */
+/**
+ * 首页横卡的**兜底**宽度：只在没有窗口环境时用到（正常路径走 [heroCardWidth]）。
+ *
+ * 固定 240dp 的老做法在 1080px 屏上只占 51%，右侧空出 40%、每行只露 1.2 张，
+ * 「还能横滑」的暗示几乎消失（UI 优化方案 L1）。
+ */
 private val CardWidth = 240.dp
+
+/** 横卡宽度 = 屏宽 × 该比例：1080px(411dp) 屏约 300dp，右侧露出下一张的 ~20%。 */
+private const val HERO_CARD_WIDTH_RATIO = 0.73f
+
+/** 横卡宽度上下限：太窄回到「一屏 1.2 张」，太宽（平板）一张就顶满。 */
+private val HeroCardMinWidth = 220.dp
+private val HeroCardMaxWidth = 340.dp
 
 /** 16:9。 */
 private const val CardAspect = 16f / 9f
+
+/**
+ * 按当前窗口宽度算横卡宽度（读 [LocalConfiguration]，旋转 / 分屏后会跟着变）。
+ *
+ * 统一固定 0.73 倍宽（上下限夹住）：不管一行有几张都同宽，避免「单卡铺满整行、
+ * 多卡缩小」的尺寸跳动（2026-10-31 用户反馈页面显得混乱）。单卡时右侧留白是刻意取舍。
+ */
+@Composable
+private fun heroCardWidth(itemCount: Int): Dp {
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    return (screenWidth * HERO_CARD_WIDTH_RATIO).coerceIn(HeroCardMinWidth, HeroCardMaxWidth)
+}
 
 // ---- @Preview ----
 
@@ -928,6 +1142,7 @@ private fun HomePreviewContent(state: HomeUiState, darkTheme: Boolean) {
                 onRetry = {},
                 onSelectServer = {},
                 onAddServer = {},
+
                 onPlay = {},
                 onOpenDetail = {},
                 onOpenLibrary = { _, _, _ -> },
