@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":source:emby"))
     implementation(project(":source:jellyfin"))
     implementation(project(":source:fnos"))
+    implementation(project(":source:smb"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

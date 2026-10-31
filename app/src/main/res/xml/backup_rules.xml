@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 及以下的备份规则（`android:fullBackupContent`）。
+
+  与 `data_extraction_rules.xml` 同一个目的：隐私区、数据库、普通凭据目录一律不备份。
+  没有对应域写法时，Android 11 会把 `<exclude domain="root" path="no_backup/">`
+  解析为「应用私有目录下的 no_backup 子目录」，正好是 noBackupFilesDir 的相对路径。
+-->
+<full-backup-content>
+    <exclude domain="root" path="no_backup/" />
+    <exclude domain="database" path="." />
+    <exclude domain="file" path="secrets/" />
+</full-backup-content>

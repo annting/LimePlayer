@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  云备份与设备迁移的排除规则（`docs/隐私模式方案.md` §4.3 / 决策 20）。
+
+  `android:allowBackup="false"` 已经关掉了整机云备份，但 **device-transfer（换机迁移）
+  在 Android 12+ 由 dataExtractionRules 单独控制**，与 allowBackup 不是同一个开关 ——
+  所以这里必须显式再排除一遍，双保险。
+
+  排除范围：
+  · no_backup/  —— 隐私保险箱（DEK 封装）与隐私加密区（私有源地址/账号/令牌）；
+  · databases/  —— Room 库：含 `file_media_items.isPrivate` 标记与私文档标题/路径；
+  · files/secrets/ —— 普通源凭据（servers.bin / token_*.bin / app_lock.bin）。
+
+  刻意**不排除** DataStore（`files/datastore/settings`）：它只存播放偏好与 activeServerId，
+  没有隐私内容；整份排除会让换机后设置全丢，收益不抵成本。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="no_backup/" />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="secrets/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="no_backup/" />
+        <exclude domain="database" path="." />
+        <exclude domain="file" path="secrets/" />
+    </device-transfer>
+</data-extraction-rules>

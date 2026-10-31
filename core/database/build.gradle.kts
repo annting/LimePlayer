@@ -21,6 +21,12 @@ android {
 
 // jvmTarget 无需配置：AGP 9 内置 Kotlin 默认取 android.compileOptions.targetCompatibility（=17）
 
+ksp {
+    // 迁移基线（docs/10-数据存储方案.md §9）：不导出 schema 就无法用 MigrationTestHelper 测 v1→v2。
+    // 产物入库到 core/database/schemas/，改表时先改代码再跑一次编译让 json 落盘。
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(project(":core:model"))
 
@@ -34,4 +40,6 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)
+    // 迁移测试（v1→v2）：读上面 room.schemaLocation 导出的 json
+    testImplementation(libs.androidx.room.testing)
 }

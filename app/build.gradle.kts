@@ -59,9 +59,15 @@ dependencies {
     implementation(project(":feature:player"))
     implementation(project(":feature:server"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:privacy"))
+    // SMB 源：登录网关要直接用 SmbConfig / testSmbConnection
+    implementation(project(":source:smb"))
 
     // 媒体会话（任务 2-4）：通知栏 / 锁屏控制的 MediaSessionService
     implementation(libs.androidx.media3.session)
+
+    // 图片：隐私会话结束时清内存/磁盘缓存（AppModule 的清理钩子直接用 SingletonImageLoader）
+    implementation(libs.coil.compose)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -90,4 +96,8 @@ dependencies {
     testImplementation(libs.truth)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // 主界面 tab 的 saveable 槽行为要真跑 Compose 保存/恢复才测得到（Robolectric）
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

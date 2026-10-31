@@ -43,10 +43,12 @@ include(
     ":source:emby",
     ":source:jellyfin",
     ":source:fnos",
+    ":source:smb",
     ":feature:detail",
     ":feature:library",
     ":feature:lock",
     ":feature:player",
+    ":feature:privacy",
     ":feature:server",
     ":feature:settings",
 )
