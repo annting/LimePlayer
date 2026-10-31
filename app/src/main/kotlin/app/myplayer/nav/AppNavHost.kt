@@ -80,6 +80,40 @@ private fun buildAuthGateway(
     settingsStore: app.myplayer.core.datastore.SettingsStore,
 ): ServerAuthGateway = ServerAuthGateway { req ->
     try {
+        // SMB 没有令牌交换：账号密码验证通过后直接把凭据（加密）存进 TokenStore
+        if (req.sourceType == SourceType.SMB) {
+            val smbConfig = app.myplayer.source.smb.SmbConfig.parse(
+                rawUrl = req.baseUrl,
+                domain = req.domain,
+                username = req.username,
+                password = req.password,
+            ) ?: return@ServerAuthGateway SignInResult.Failed("请填写共享目录，例如 smb://192.168.31.15/video")
+
+            val info = app.myplayer.feature.server.testSmbConnection(smbConfig)
+            // 先配置后令牌：私有源的凭据要落 DEK 加密区，而加密条目随配置落盘才建立
+            configStore.upsert(
+                ServerConfig(
+                    id = req.serverId,
+                    sourceType = req.sourceType,
+                    name = req.displayName ?: "${smbConfig.share} (${smbConfig.host})",
+                    baseUrl = req.baseUrl,
+                    // SMB 没有 userId；SourceFactory 的 SMB 分支不读它
+                    userId = null,
+                    isPrivate = req.isPrivate,
+                )
+            )
+            tokenStore.put(
+                req.serverId,
+                app.myplayer.feature.server.SmbCredentials(
+                    username = req.username,
+                    password = req.password,
+                    domain = req.domain,
+                ).encode(),
+            )
+            android.util.Log.i("LimeSMB", "登录成功：$info")
+            if (req.activate) settingsStore.setActiveServerId(req.serverId)
+            return@ServerAuthGateway SignInResult.Ok
+        }
         if (req.authMode == AuthMode.API_KEY) {
             val api = HttpMediaApi(
                 client = client,
@@ -95,7 +129,6 @@ private fun buildAuthGateway(
                 ),
             )
             val user = api.getCurrentUser()
-            tokenStore.put(req.serverId, req.apiKey)
             configStore.upsert(
                 ServerConfig(
                     id = req.serverId,
@@ -104,8 +137,10 @@ private fun buildAuthGateway(
                     name = req.displayName ?: user.name ?: req.baseUrl,
                     baseUrl = req.baseUrl,
                     userId = user.id,
+                    isPrivate = req.isPrivate,
                 )
             )
+            tokenStore.put(req.serverId, req.apiKey)
             if (req.activate) settingsStore.setActiveServerId(req.serverId)
             SignInResult.Ok
         } else {
@@ -130,6 +165,7 @@ private fun buildAuthGateway(
                 // 重新登录不改「当前服务器」——用户只是修了地址，不该顺带切换服务器
                 settingsStore = if (req.activate) settingsStore else null,
                 displayName = req.displayName,
+                isPrivate = req.isPrivate,
             )
             loginVm.onUsernameChange(req.username)
             loginVm.onPasswordChange(req.password)
@@ -165,6 +201,7 @@ private fun addServerForm(vm: AddServerViewModel, scope: kotlinx.coroutines.Coro
         onPasswordChange = vm::onPasswordChange,
         onApiKeyChange = vm::onApiKeyChange,
         onNameChange = vm::onNameChange,
+        onSaveAsPrivateChange = vm::onSaveAsPrivateChange,
         onTest = { scope.launch { vm.onTest() } },
         onSubmit = { scope.launch { vm.onSubmit() } },
     )
@@ -184,11 +221,17 @@ fun AppNavHost(
     client: OkHttpClient,
     clientCapabilities: ClientCapabilities,
     engineHolder: app.myplayer.playback.PlaybackEngineHolder,
+    /** 本地播放进度（文件型源）；null = 不写本地（预览 / 测试）。 */
+    playbackStore: app.myplayer.core.model.PlaybackStore? = null,
     appUnlocked: kotlinx.coroutines.flow.StateFlow<Boolean>,
     keepBackgroundPlayback: Boolean,
     autoPlayNext: Boolean,
     /** 应用锁开关（设置 → 隐私）：决定「解锁回前台是否自动续播」。 */
     appLockEnabled: Boolean = true,
+    /** 是否已录过解锁图案：没录过时应用锁不生效（主界面据此决定要不要盖锁屏）。 */
+    patternConfigured: Boolean = false,
+    /** 打开图案设置（绘制 → 确认），由 MainActivity 以全屏覆盖层承载。 */
+    onSetupPattern: () -> Unit = {},
     localThumbnails: Boolean,
     serverId: String?,
     source: MediaSource?,
@@ -207,9 +250,60 @@ fun AppNavHost(
         app.myplayer.feature.player.PlayerSubtitleStyle(),
     /** 是否处于画中画（PiP 里播放页要取消假横屏）。 */
     inPictureInPicture: Boolean = false,
+    /** 关于页版本号连点 3 下触发：打开隐私门（由 MainActivity 以全屏覆盖层承载）。 */
+    onPrivacyEntry: () -> Unit = {},
+    /**
+     * 隐私会话结束的计数。每次从「隐私中」退回普通模式 +1 —— 收到就**把导航栈弹回主界面**，
+     * 否则用户会停在刚才那个隐私源的详情页/播放页上（返回普通模式后那里已经没有数据了）。
+     */
+    privacyResetSignal: Int = 0,
+    /**
+     * 隐私会话**进入成功**的计数。入口在「设置 → 关于」页，验证完不该还停在那儿 ——
+     * 收到就把 tab 切回首页（`MainScaffold`）并把主栈弹回 [Routes.MAIN]。
+     */
+    privacyEnterSignal: Int = 0,
+    /**
+     * 当前是否处于隐私模式。决定：
+     * · 「添加服务器」页是否出现「存为隐私源」；
+     * · 设置页服务器行是否显示隐私标识与「移入隐私」动作。
+     * 这两处都只在隐私模式下可用 —— 普通模式看不到私有源，也就无从操作它。
+     */
+    privacyActive: Boolean = false,
+    /** 私有源敏感字段加密区：设置页「移入隐私」要用它写凭据。null = 未接（测试/预览）。 */
+    privateSecrets: app.myplayer.core.datastore.PrivacyServerSecretStore? = null,
+    /** 文件库存（SMB 条目的 `isPrivate` 标记写入口）。null = 未接（预览/测试）。 */
+    fileCatalog: app.myplayer.core.model.FileCatalogStore? = null,
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
+    /**
+     * 播放页返回计数：pop 回主界面时 +1，首页据此重拉「继续观看」。
+     * 首页数据是缓存的，播放时写的进度要等重新 load 才会反映出来（2026-10-31 用户反馈）。
+     */
+    val homeRefreshSignal = remember { mutableIntStateOf(0) }
+    /**
+     * 库详情页静默刷新计数：同样在播放页返回时 +1。
+     *
+     * 媒体库列表要显示**卡片进度条**（`userData.resumePositionTicks`），而列表是进页面时拉一次的；
+     * 播完返回若不重拉，进度条就停在进去之前的旧值（用户 2026-10-31 反馈「看不见进度」的配套问题）。
+     */
+    val listRefreshSignal = remember { mutableIntStateOf(0) }
+
+    // 隐私会话结束 → 回主界面。`inclusive = false`：保留 MAIN 本身，只弹掉它之上的页面。
+    // 这个 effect 在首次组合时也会跑一次，但信号为 0 时直接返回，不会误弹。
+    LaunchedEffect(privacyResetSignal) {
+        if (privacyResetSignal > 0) {
+            nav.popBackStack(Routes.MAIN, inclusive = false)
+        }
+    }
+
+    // 进入隐私模式 → 同样回主界面：门是从「设置 → 关于」拉起来的，
+    // 验完还停在关于页会让人以为没进去（tab 由 MainScaffold 切回首页）。
+    LaunchedEffect(privacyEnterSignal) {
+        if (privacyEnterSignal > 0) {
+            nav.popBackStack(Routes.MAIN, inclusive = false)
+        }
+    }
     val authGateway = remember(client, serverConfigStore, tokenStore, settingsStore) {
         buildAuthGateway(client, serverConfigStore, tokenStore, settingsStore)
     }
@@ -253,8 +347,8 @@ fun AppNavHost(
 
         // 新增服务器：地址 + 账号在**同一页**填完，点「登录」直接落盘并入主界面。
         composable(Routes.ADD_SERVER) {
-            val vm = remember(authGateway, probe) {
-                AddServerViewModel(probe = probe, auth = authGateway)
+            val vm = remember(authGateway, probe, privacyActive) {
+                AddServerViewModel(probe = probe, auth = authGateway, allowPrivate = privacyActive)
             }
             val state by vm.state.collectAsStateWithLifecycle()
             // 登录已把 ServerConfig / Token 落盘并设为当前服务器 → 回根级，MainActivity 重新造出 source
@@ -299,6 +393,7 @@ fun AppNavHost(
                         // 「只改名」不需要重新登录，本地落盘即可
                         saveLocal = { name -> serverConfigStore.upsert(config.copy(name = name)) },
                         initial = config,
+                        allowPrivate = privacyActive,
                     )
                 }
                 val state by vm.state.collectAsStateWithLifecycle()
@@ -321,8 +416,11 @@ fun AppNavHost(
         composable(Routes.MAIN) {
             val sid = serverId
             if (sid == null) {
-                // 配置尚未就绪（登录落盘与重组的短暂过渡态）：避免 serverId!! 崩溃
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                // 没有**可见**的服务器：可能是还没添加，也可能是刚退出隐私模式、
+                // 唯一一台服务器是隐私源（被策略过滤掉了）。两种情况都该看到空态，
+                // 而不是一个永远转下去的圈 —— 首次进入时 startDestination 是 WELCOME，
+                // 走不到这里；能走到这里说明是从「有源」变成了「无源」。
+                NoServerScreen(onAddServer = { nav.navigate(Routes.ADD_SERVER) })
             } else {
                 MainScaffold(
                     repository = repository,
@@ -343,6 +441,15 @@ fun AppNavHost(
                                 android.net.Uri.encode(title) + "&smb=$smb",
                         )
                     },
+                    patternConfigured = patternConfigured,
+                    onSetupPattern = onSetupPattern,
+                    onPrivacyEntry = onPrivacyEntry,
+                    privacyResetSignal = privacyResetSignal,
+                    privacyEnterSignal = privacyEnterSignal,
+                    privacyActive = privacyActive,
+                    privateSecrets = privateSecrets,
+                    fileCatalog = fileCatalog,
+                    homeRefreshSignal = homeRefreshSignal.intValue,
                 )
             }
         }
@@ -362,6 +469,10 @@ fun AppNavHost(
                 DetailRoute(
                     itemId = itemId,
                     source = src,
+                    // 档二隐私开关（2026-10-29）：SMB/LOCAL + 隐私模式才可用；
+                    // Emby 系 catalog 未接入 / privacyActive=false → 按钮不渲染
+                    catalog = fileCatalog,
+                    privacyActive = privacyActive,
                     loadImage = { item, kind ->
                         val remote = src.image(item, kind, ImageSize.MEDIUM)
                         if (kind == ImageKind.POSTER && remote is ImageSource.None &&
@@ -372,7 +483,13 @@ fun AppNavHost(
                             remote
                         }
                     },
-                    onBack = { nav.popBackStack() },
+                    onBack = {
+                        nav.popBackStack()
+                        // 详情页能改「已看」状态（标记已播放 / 删除）：返回后首页与媒体库都要重读，
+                        // 否则卡片上的进度条、已看态还是进去之前的样子（2026-10-31）
+                        homeRefreshSignal.intValue++
+                        listRefreshSignal.intValue++
+                    },
                     onPlay = { item -> nav.navigate("${Routes.PLAYER}/${item.id}") },
                     // 标记已看成功 → 服务端权威 UserData 写回本地缓存（`02` §5.1）
                     onUserDataChanged = { sid, iid, ud -> repository.updateUserData(sid, iid, ud) },
@@ -381,6 +498,9 @@ fun AppNavHost(
                         scope.launch {
                             repository.deleteItem(item.serverId, item.id)
                             nav.popBackStack()
+                            // 删掉的卡片要立刻从列表消失（SMB 列表是实时列目录，重拉即可）
+                            homeRefreshSignal.intValue++
+                            listRefreshSignal.intValue++
                         }
                     },
                     onPersonClick = { person ->
@@ -461,9 +581,16 @@ fun AppNavHost(
                         libraryId = libraryId,
                         title = title,
                         smb = smb,
+                        caps = clientCapabilities,
+                        localThumbnails = localThumbnails,
                         onPlay = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId") },
                         onOpenDetail = { item -> nav.navigate("${Routes.DETAIL}/${item.id}") },
                         onBack = { nav.popBackStack() },
+                        catalog = fileCatalog,
+                        // 档二标记只在隐私模式下开放：普通模式标成隐私后会立刻从列表消失，
+                        // 而取消标记又必须进隐私模式，等于把内容藏进一个用户进不去的地方
+                        privacyActive = privacyActive,
+                        refreshSignal = listRefreshSignal.intValue,
                     )
                 }
             } else {
@@ -497,7 +624,12 @@ fun AppNavHost(
                     source = src,
                     caps = clientCapabilities,
                     engine = engineHolder.engine,
-                    onBack = { nav.popBackStack() },
+                    onBack = {
+                        nav.popBackStack()
+                        // 两个都要刷：首页「继续观看」+ 库详情页的卡片进度条
+                        homeRefreshSignal.intValue++
+                        listRefreshSignal.intValue++
+                    },
                     appUnlocked = appUnlocked,
                     keepBackgroundPlayback = keepBackgroundPlayback,
                     appLockEnabled = appLockEnabled,
@@ -508,6 +640,8 @@ fun AppNavHost(
                     subtitleStyle = subtitleStyle,
                     defaultOrientation = defaultOrientation,
                     inPictureInPicture = inPictureInPicture,
+                    playbackStore = playbackStore,
+                    privacyMode = privacyActive,
                     onLandscapeChange = { landscape, fakeRotation ->
                         playerLandscape.value = landscape
                         playerFakeRotation.value = fakeRotation
@@ -543,8 +677,23 @@ private suspend fun loadPosterWithFallback(
     source: MediaSource?,
     caps: ClientCapabilities,
     thumbs: LocalThumbnailProvider?,
+): ImageSource = loadImageWithFallback(item, ImageKind.POSTER, source, caps, thumbs)
+
+/**
+ * 通用图片加载（海报 / 剧照 / 抽帧）。
+ *
+ * 只有「源自己也没有 + 条目声明没有海报」时才落到本地抽帧 —— 否则每张图都会多读一次文件头。
+ * `hasPoster = false` 是 SMB / 本地文件这类无元数据源的常态，因此 SMB 的卡片预览图实际总走 [thumbs]。
+ */
+private suspend fun loadImageWithFallback(
+    item: MediaItemDto,
+    kind: ImageKind,
+    source: MediaSource?,
+    caps: ClientCapabilities,
+    thumbs: LocalThumbnailProvider?,
 ): ImageSource {
-    val remote = source?.image(item, ImageKind.POSTER, ImageSize.MEDIUM)
+    val size = if (kind == ImageKind.POSTER) ImageSize.MEDIUM else ImageSize.LARGE
+    val remote = source?.image(item, kind, size)
     if (remote is ImageSource.None && !item.hasPoster && thumbs != null) {
         return thumbs.image(item)
     }
@@ -564,12 +713,27 @@ internal fun SettingsDestination(
     onHomeSettingsHighlightHandled: () -> Unit = {},
     /** 二级页开关：进/出「字幕设置」「关于」时通知外层隐藏悬浮导航（tab 根页才该有导航）。 */
     onSubPageChange: (Boolean) -> Unit = {},
+    /** 是否已录过解锁图案（没录过时应用锁不生效）。 */
+    patternConfigured: Boolean = false,
+    /** 打开图案设置页（绘制 → 确认），由 MainActivity 用全屏覆盖层承载。 */
+    onSetupPattern: () -> Unit = {},
+    /** 关于页版本号连点 3 下：打开隐私门（隐藏入口，页面上没有任何可见按钮）。 */
+    onPrivacyEntry: () -> Unit = {},
+    /** 是否处于隐私模式（服务器行的隐私标识 / 移入隐私入口）。 */
+    privacyActive: Boolean = false,
+    /** 私有源敏感字段加密区（「移入隐私」写凭据用）。 */
+    privateSecrets: app.myplayer.core.datastore.PrivacyServerSecretStore? = null,
 ) {
     val vm: app.myplayer.feature.settings.SettingsViewModel = viewModel(
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                app.myplayer.feature.settings.SettingsViewModel(settingsStore, serverConfigStore, tokenStore) as T
+                app.myplayer.feature.settings.SettingsViewModel(
+                    settingsStore,
+                    serverConfigStore,
+                    tokenStore,
+                    privateSecrets,
+                ) as T
         },
     )
     val state by vm.state.collectAsStateWithLifecycle()
@@ -622,8 +786,12 @@ internal fun SettingsDestination(
                 onHomeSettings = { subNav.navigate(SUB_ROUTE_HOME) },
                 onAbout = { subNav.navigate(SUB_ROUTE_ABOUT) },
                 onBack = { /* tab 页无返回 */ },
+                patternConfigured = patternConfigured,
+                onSetupPattern = onSetupPattern,
                 highlightHomeSettings = highlightHomeSettings,
                 onHighlightHandled = onHomeSettingsHighlightHandled,
+                privacyActive = privacyActive,
+                onMoveToPrivacy = vm::moveToPrivacy,
             )
         }
         composable(SUB_ROUTE_SUBTITLE) {
@@ -654,6 +822,7 @@ internal fun SettingsDestination(
                         ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "0.1.0"
                     }.getOrDefault("0.1.0"),
                     onBack = { subNav.popBackStack() },
+                    onVersionTap = onPrivacyEntry,
                 )
             }
         }
@@ -685,19 +854,44 @@ internal fun LibraryDetailDestination(
     libraryId: String,
     title: String,
     smb: Boolean,
+    caps: ClientCapabilities,
+    /** 设置 → 预览 · 本地生成缩略图（关掉时 SMB 卡片只剩 FileIcon 占位）。 */
+    localThumbnails: Boolean,
     onPlay: (String) -> Unit,
     onOpenDetail: (item: app.myplayer.core.model.MediaItemDto) -> Unit,
     onBack: () -> Unit,
+    catalog: app.myplayer.core.model.FileCatalogStore? = null,
+    /** 是否处于隐私模式：档二「标记为隐私」只在隐私模式开放（见调用点注释）。 */
+    privacyActive: Boolean = false,
+    /** 播放页返回计数：变了就静默重拉列表，刷新卡片进度条（不闪 loading）。 */
+    refreshSignal: Int = 0,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // SMB 没有海报服务，格子里的预览图**全靠**这一条抽帧链路（见 ThumbnailFallback.kt）
+    val thumbs = remember(source, serverId, localThumbnails) {
+        if (localThumbnails && source != null) LocalThumbnailProvider(context, source, caps) else null
+    }
     val vm: app.myplayer.feature.library.LibraryDetailViewModel = viewModel(
         key = "libdetail-$libraryId-$smb",
         factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                app.myplayer.feature.library.LibraryDetailViewModel(source, serverId, libraryId, smb) as T
+                app.myplayer.feature.library.LibraryDetailViewModel(
+                    source,
+                    serverId,
+                    libraryId,
+                    smb,
+                    catalog,
+                ) as T
         },
     )
     val state by vm.state.collectAsStateWithLifecycle()
+
+    // 从播放页返回 → 静默重拉一次：进度条的数据源是列表项自带的断点，
+    // 不重拉就会一直显示进去之前的旧进度（2026-10-31）。
+    LaunchedEffect(refreshSignal) {
+        if (refreshSignal > 0) vm.refresh(silent = true)
+    }
 
     app.myplayer.feature.library.LibraryDetailScreen(
         state = state,
@@ -707,7 +901,7 @@ internal fun LibraryDetailDestination(
             app.myplayer.feature.library.home.HomeSourceType.EMBY
         },
         title = title,
-        loadImage = { item, kind -> vm.image(item, kind) },
+        loadImage = { item, kind -> loadImageWithFallback(item, kind, source, caps, thumbs) },
         onBack = onBack,
         onOpenDetail = onOpenDetail,
         // SMB 视频没有条目 id，播放器拿路径当 id（source:smb 接入后走本地播放链路）
@@ -718,6 +912,10 @@ internal fun LibraryDetailDestination(
         onSelectAll = vm::selectAll,
         onMarkWatched = vm::markWatched,
         onApplyFilter = vm::applyFilter,
+        onTogglePrivate = vm::togglePrivate,
+        // 档二只对文件型条目（SMB / 本地）有意义；在线源靠「藏整源」
+        canMarkPrivate = smb && catalog != null && privacyActive,
+        privacyActive = privacyActive,
     )
 }
 
@@ -725,6 +923,10 @@ internal fun LibraryDetailDestination(
 internal fun HomeDestination(
     serverId: String,
     source: MediaSource?,
+    /** 客户端能力：SMB 的抽帧要拿它去协商播放地址。 */
+    caps: ClientCapabilities,
+    /** 设置 → 预览 · 本地生成缩略图（SMB 文件夹封面靠它）。 */
+    localThumbnails: Boolean,
     /**
      * 服务器配置列表（`null` = 还在读盘）。
      *
@@ -735,26 +937,55 @@ internal fun HomeDestination(
      */
     configs: List<ServerConfig>?,
     settingsStore: app.myplayer.core.datastore.SettingsStore,
+    /** 档二库存（首页卡片「设为 / 取消隐私」写这里）；null = 未接 → 卡片不出三点。 */
+    fileCatalog: app.myplayer.core.model.FileCatalogStore? = null,
     onAddServer: () -> Unit,
     onPlay: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
     onOpenLibrary: (libraryId: String, title: String, smb: Boolean) -> Unit,
     /** 首页全关空态的「去设置开启」：切到设置 tab 并直接打开「首页设置」。 */
     onGoToHomeSettings: () -> Unit,
+    /**
+     * 隐私会话结束信号（递增计数）。收到就**重拉一次首页** ——
+     * 首页数据是缓存的，退出隐私后如果源没变（比如一直是 SMB），
+     * 屏幕上会留着刚从隐私模式里看到的条目，等于退出时还在展示。
+     */
+    resetSignal: Int = 0,
+    /**
+     * 隐私会话**进入**信号（递增计数）。进入隐私模式后也要重拉 —— 否则首页仍显示
+     * 普通模式的缓存（被标隐私的文件夹/视频还在隐藏态），用户看不到「取消隐私」入口
+     * （2026-10-29 真机）。
+     */
+    enterSignal: Int = 0,
+    /** 播放页返回信号（递增计数）。返回时重拉一次首页，让播放中写的进度出现在「继续观看」。 */
+    refreshSignal: Int = 0,
+    /**
+     * 是否处于隐私模式。传给 [HomeScreen]：首页卡片的三点菜单（设为 / 取消隐私）与隐私标志
+     * 只在隐私模式显示，普通模式不暴露隐私管理入口。
+     */
+    privacyActive: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // SMB（以及将来的本地文件夹）没有海报服务：文件夹封面 / 最近添加的预览图全靠本地抽帧
+    val thumbs = remember(source, serverId, localThumbnails) {
+        if (localThumbnails && source != null) LocalThumbnailProvider(context, source, caps) else null
+    }
     // 起始值用 null 而不是 emptyList()：DataStore 首帧还没读出来时不能当成「没有服务器」，
     // 否则首页会闪一下「还没有服务器」空态（编辑服务器页踩过同一个坑）
     val servers = remember(configs) {
-        configs.orEmpty().map { HomeServerOption(it.id, it.name, it.baseUrl) }
+        configs.orEmpty().map { HomeServerOption(it.id, it.name, it.baseUrl, it.sourceType) }
     }
     val serverName = servers.firstOrNull { it.id == serverId }?.name
 
     // 首页形态跟着「当前服务器是什么源」走：
-    // · 文件类（LOCAL，未来的 SMB）→ 文件夹形态（顶层非空文件夹即分类）
+    // · 文件类（SMB / LOCAL）→ 文件夹形态（顶层非空文件夹即分类）
     // · 其余（Emby / Jellyfin / 飞牛）→ 媒体库形态
     val homeSourceType = when (configs?.firstOrNull { it.id == serverId }?.sourceType) {
-        app.myplayer.core.model.SourceType.LOCAL -> HomeSourceType.SMB
+        // 2026-10-25：SMB 之前漏在这里（只有 LOCAL），导致 SMB 服务器首页仍按「媒体库」形态渲染
+        app.myplayer.core.model.SourceType.SMB,
+        app.myplayer.core.model.SourceType.LOCAL,
+        -> HomeSourceType.SMB
         else -> HomeSourceType.EMBY
     }
 
@@ -775,10 +1006,16 @@ internal fun HomeDestination(
                     data,
                     // 首页设置：与设置页「首页设置」共用同一份 DataStore（实时联动）
                     app.myplayer.feature.library.home.HomeSettingsRepository(settingsStore),
+                    // 档二库存：首页卡片「设为 / 取消隐私」的数据源（SMB/LOCAL 才有值）
+                    fileCatalog,
                 ) as T
         },
     )
     LaunchedEffect(data) { vm.rebind(data) }
+    LaunchedEffect(resetSignal) { if (resetSignal > 0) vm.refresh() }
+    LaunchedEffect(enterSignal) { if (enterSignal > 0) vm.refresh() }
+    // 播放页返回：重拉一次，让「继续观看」立刻反映播放时的进度
+    LaunchedEffect(refreshSignal) { if (refreshSignal > 0) vm.refresh() }
     val state by vm.state.collectAsStateWithLifecycle()
 
     HomeScreen(
@@ -790,7 +1027,7 @@ internal fun HomeDestination(
             selectedServerId = serverId,
             serverName = serverName ?: state.serverName,
         ),
-        loadImage = { item, kind -> vm.image(item, kind) },
+        loadImage = { item, kind -> loadImageWithFallback(item, kind, source, caps, thumbs) },
         onRefresh = vm::refresh,
         onRetry = vm::refresh,
         // 切源 = 改「当前服务器」，与设置页同一个写入口；serverId 变化后整个主界面会重建
@@ -800,6 +1037,8 @@ internal fun HomeDestination(
         onOpenDetail = { item -> onOpenDetail(item.id) },
         onOpenLibrary = onOpenLibrary,
         onGoToHomeSettings = onGoToHomeSettings,
+        onToggleCardPrivate = vm::toggleCardPrivate,
+        privacyActive = privacyActive,
     )
 }
 
@@ -811,6 +1050,8 @@ internal fun SearchDestination(
     caps: ClientCapabilities,
     localThumbnails: Boolean,
     onOpenDetail: (String) -> Unit,
+    /** 隐私会话结束计数：非 0 变化时清掉搜索历史与当前查询（历史里可能是隐私标题）。 */
+    privacyResetSignal: Int = 0,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val thumbs = remember(source, serverId, localThumbnails) {
@@ -826,6 +1067,13 @@ internal fun SearchDestination(
         },
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    // 隐私会话结束：搜索历史与输入框里的关键词都可能含私有标题，一律清掉
+    LaunchedEffect(privacyResetSignal) {
+        if (privacyResetSignal > 0) {
+            vm.clearRecent()
+            vm.clearQuery()
+        }
+    }
     app.myplayer.feature.library.SearchScreen(
         state = state,
         onQueryChange = vm::onQueryChange,

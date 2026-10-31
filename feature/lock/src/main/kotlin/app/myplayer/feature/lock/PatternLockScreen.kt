@@ -61,6 +61,8 @@ fun PatternLockScreen(
     onPointTouched: (Int) -> Unit,
     onDrawEnd: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 标题：解锁时是「绘制解锁图案」，设置/确认图案时换成对应文案。 */
+    title: String = "绘制解锁图案",
     onErrorAnimationDone: () -> Unit = {},
 ) {
     val density = LocalDensity.current
@@ -135,7 +137,7 @@ fun PatternLockScreen(
         ) {
             LockMark()
             Spacer(Modifier.height(Spacing.xl.dp))
-            Text("绘制解锁图案", style = MaterialTheme.typography.titleLarge, color = scheme.onSurface)
+            Text(title, style = MaterialTheme.typography.titleLarge, color = scheme.onSurface)
             Spacer(Modifier.height(Spacing.sm.dp))
             val hint = state.message ?: "连接至少 4 个点"
             Text(

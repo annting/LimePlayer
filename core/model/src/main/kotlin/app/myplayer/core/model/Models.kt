@@ -7,7 +7,7 @@ package app.myplayer.core.model
  * 新增字段需同时更新规范、`05-接口契约.md` 的字段映射与数据库表结构。
  */
 
-enum class SourceType { EMBY, JELLYFIN, /** 飞牛影视（fnOS Media Center，私有 API + authx 签名）。 */ FNOS, LOCAL }
+enum class SourceType { EMBY, JELLYFIN, /** 飞牛影视（fnOS Media Center，私有 API + authx 签名）。 */ FNOS, /** SMB 共享目录（Windows / NAS 文件共享，见 :source:smb）。 */ SMB, LOCAL }
 
 enum class ImageKind { POSTER, BACKDROP, THUMB, LOGO }
 
@@ -143,6 +143,17 @@ data class CastMember(
 )
 
 enum class StreamKind { VIDEO, AUDIO, SUBTITLE }
+
+/**
+ * 「现场探测」出来的技术信息（没有元数据服务的源用：SMB / 本地文件）。
+ *
+ * [streams] 喂给详情页的「视频 / 音频 / 字幕信息」分区；[durationTicks] 补上条目时长
+ * —— 列表接口不读文件头，所以 SMB 条目在探测之前 `durationTicks` 一直是 0。
+ */
+data class MediaProbeInfo(
+    val streams: List<MediaStreamInfo> = emptyList(),
+    val durationTicks: Ticks = Ticks.ZERO,
+)
 
 /** 单条媒体流（详情页「文件 / 视频 / 音频 / 字幕信息」分区的数据源，`02` §4.2.1）。只做展示，不参与播放决策。 */
 data class MediaStreamInfo(

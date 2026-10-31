@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,6 +65,31 @@ fun MainScaffold(
     onOpenDetail: (String) -> Unit,
     /** 打开媒体库详情页（首页「我的媒体库 / 我的文件夹」卡片、「查看全部」）。 */
     onOpenLibraryDetail: (libraryId: String, title: String, smb: Boolean) -> Unit,
+    /** 是否已录过解锁图案：设置页据此提示「应用锁是否真的生效」。 */
+    patternConfigured: Boolean = false,
+    /** 打开图案设置页（由 MainActivity 覆盖层承载）。 */
+    onSetupPattern: () -> Unit = {},
+    /** 关于页版本号连点 3 下：打开隐私门（隐藏入口）。 */
+    onPrivacyEntry: () -> Unit = {},
+    /**
+     * 隐私会话结束计数。收到就**把 tab 切回首页** —— 会话结束时用户可能正停在
+     * 「设置 → 关于」这类深层页面（隐私入口就在那儿），退回普通模式后不该还留在那。
+     */
+    privacyResetSignal: Int = 0,
+    /**
+     * 隐私会话**进入成功**的计数。入口在「设置 → 关于」页，验完停在那儿会让人以为没进去 ——
+     * 收到就切回首页 tab（顺带把设置页的二级页（关于/字幕设置）从组合里移走，
+     * 下次再进设置就是干净的列表页）。
+     */
+    privacyEnterSignal: Int = 0,
+    /** 是否处于隐私模式（服务器行隐私标识 / 移入隐私入口）。 */
+    privacyActive: Boolean = false,
+    /** 私有源敏感字段加密区（「移入隐私」写凭据用）。 */
+    privateSecrets: app.myplayer.core.datastore.PrivacyServerSecretStore? = null,
+    /** 档二库存（首页文件夹/视频卡「设为隐私」）；SMB/LOCAL 源才有值。 */
+    fileCatalog: app.myplayer.core.model.FileCatalogStore? = null,
+    /** 播放页返回计数：首页据此重拉「继续观看」（播放中写的进度要重新 load 才反映）。 */
+    homeRefreshSignal: Int = 0,
 ) {
     // 启动落点 = 首页（聚合页）：一进来就该看到继续观看与最近添加，而不是库页的筛选器。
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
@@ -77,6 +103,35 @@ fun MainScaffold(
     // 而 `hideNav` 又限定在 SETTINGS tab，别的 tab 永远不会被这个状态影响。
     var settingsSubPage by rememberSaveable { mutableStateOf(false) }
     val hideNav = selectedTab == MainTab.SETTINGS && settingsSubPage
+
+    // 设置 tab 的 saveable 槽版本号。**光切 tab 清不掉子导航的返回栈**：
+    // `subNav` 的栈是 `rememberNavController` 用 `rememberSaveable` 存进 `tabStates` 的，
+    // 切走再切回来会被原样恢复 —— 而隐私会话的入口就在「设置 → 关于」，进入/退出后
+    // 下次点「设置」会直接落回关于页（2026-10-29 真机，问题 5 修完才暴露）。
+    // 每经历一次隐私会话就换一个槽，旧槽（连同「列表 → 关于」的返回栈）一起丢弃。
+    // ViewModel 挂在 MAIN 的 store 上，不受换槽影响。
+    // 用 `rememberSaveable`：旋转/深色切换重建后版本号要跟着回来，否则会在 #0 / #n 之间多跳一次。
+    var settingsSlot by rememberSaveable { mutableStateOf(0) }
+
+    // 隐私会话结束 → 回首页 tab + 丢弃设置子导航的返回栈
+    LaunchedEffect(privacyResetSignal) {
+        if (privacyResetSignal > 0) {
+            selectedTab = MainTab.HOME
+            settingsSlot++
+            // 换槽后新子导航落在列表页，这里同步把「二级页」标记归零：
+            // 否则下次进设置 tab 会先按旧标记把悬浮导航藏起来再放回来（闪一下）
+            settingsSubPage = false
+        }
+    }
+
+    // 进入隐私模式 → 同样回首页 tab（入口在「设置 → 关于」，验完不该还停在那儿）
+    LaunchedEffect(privacyEnterSignal) {
+        if (privacyEnterSignal > 0) {
+            selectedTab = MainTab.HOME
+            settingsSlot++
+            settingsSubPage = false
+        }
+    }
 
     // 服务器配置在**这一层**收集：`when (selectedTab)` 会把上一个 tab 的整棵内容树移出组合，
     // 若下游页面自己收流，每次切回来首帧还是 `initialValue = null`（首页会因此闪一下骨架屏，
@@ -93,11 +148,14 @@ fun MainScaffold(
     val navBarsBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val navTopEdge = navBarsBottom + Dimens.navMargin + Dimens.navHeight
 
-    // 下发给页面的底部留白 = 胶囊顶边 + 4dp 呼吸。
+    // 下发给页面的底部留白 = 胶囊顶边 + 呼吸。
     // 之前是 navReserved(92) + navBars + 各页自己的 24dp ≈ 141dp，滚到底会空出一大截。
     // **不能真的压到 80dp**：80 < 101（一加上手势条 25 + 下边距 16 + 胶囊 60），
     // 最后一行会被胶囊压掉 20dp。按几何算下来 105dp 才是「贴着胶囊但不重叠」。
-    val navSpace = navTopEdge + Spacing.xs.dp
+    //
+    // 2026-10-29：呼吸从 4dp 加到 14dp（1080 宽下 +30px）。真机上「滑到底最后一行贴着胶囊」
+    // 太挤，四个 tab 页（首页 / 媒体库 / 搜索 / 设置）共用这一个值。
+    val navSpace = navTopEdge + Spacing.xs.dp + 10.dp
 
     // 导航被隐藏时（设置二级页），页面底部只需要让出手势条 ——
     // 否则整屏内容底下会空出 105dp 的空白，看着像被截了一段。
@@ -126,13 +184,19 @@ fun MainScaffold(
                 animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
                 label = "mainTab",
             ) { tab ->
-                tabStates.SaveableStateProvider(tab.name) {
+                // 设置 tab 的槽带版本号（见 settingsSlot 注释）：隐私会话进出后换新槽，
+                // 子导航回列表页；其它 tab 保持固定槽，切来切去仍恢复滚动位置。
+                tabStates.SaveableStateProvider(tabStateSlotKey(tab, settingsSlot)) {
                     when (tab) {
                     MainTab.HOME -> HomeDestination(
                         serverId = serverId,
                         source = source,
+                        caps = caps,
+                        localThumbnails = localThumbnails,
                         configs = configs,
                         settingsStore = settingsStore,
+                        // 档二库存：首页文件夹/视频卡「设为隐私」写这里（SMB/LOCAL）
+                        fileCatalog = fileCatalog,
                         onAddServer = onAddServer,
                         onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
@@ -143,6 +207,14 @@ fun MainScaffold(
                             pendingHomeSettings = true
                             selectedTab = MainTab.SETTINGS
                         },
+                        // 退出隐私 → 首页重拉：否则屏幕上会留着刚看过的私有条目
+                        resetSignal = privacyResetSignal,
+                        // 进入隐私 → 首页重拉：否则标隐私的文件夹/视频仍在隐藏态，看不到「取消隐私」
+                        enterSignal = privacyEnterSignal,
+                        // 播放返回 → 首页重拉：播放中写的进度不重拉不会出现在「继续观看」
+                        refreshSignal = homeRefreshSignal,
+                        // 首页卡片三点菜单（设为 / 取消隐私）只在隐私模式显示
+                        privacyActive = privacyActive,
                     )
                     MainTab.LIBRARY -> LibraryDestination(
                         repository = repository,
@@ -163,6 +235,7 @@ fun MainScaffold(
                         caps = caps,
                         localThumbnails = localThumbnails,
                         onOpenDetail = onOpenDetail,
+                        privacyResetSignal = privacyResetSignal,
                     )
                     MainTab.SETTINGS -> SettingsDestination(
                         settingsStore = settingsStore,
@@ -173,6 +246,13 @@ fun MainScaffold(
                         highlightHomeSettings = pendingHomeSettings,
                         onHomeSettingsHighlightHandled = { pendingHomeSettings = false },
                         onSubPageChange = { settingsSubPage = it },
+                        patternConfigured = patternConfigured,
+                        onSetupPattern = onSetupPattern,
+                        onPrivacyEntry = onPrivacyEntry,
+                        // 这两个必须一路传到 SettingsScreen：漏一个则普通模式也会显示「移入隐私」，
+                        // 或点了写不进加密区（VM 里 privateSecrets == null 直接短路）
+                        privacyActive = privacyActive,
+                        privateSecrets = privateSecrets,
                     )
                 }
                 }
@@ -223,3 +303,15 @@ fun MainScaffold(
         }
     }
 }
+
+/**
+ * tab 内容在 `rememberSaveableStateHolder` 里的槽 key。
+ *
+ * **只有「设置」带版本号**：它的子导航（列表 → 关于）会把返回栈通过 `rememberSaveable`
+ * 存进槽里，而隐私模式的入口就在「关于」页 —— 进出隐私后不换槽的话，下次点「设置」
+ * 会直接落回关于页（2026-10-29 真机，入口跳首页之后暴露）。
+ *
+ * 其它 tab 用固定 key：切走再切回来照常恢复滚动位置。
+ */
+internal fun tabStateSlotKey(tab: MainTab, settingsSlot: Int): String =
+    if (tab == MainTab.SETTINGS) "${tab.name}#$settingsSlot" else tab.name
