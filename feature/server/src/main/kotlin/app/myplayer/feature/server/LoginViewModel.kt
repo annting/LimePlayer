@@ -34,6 +34,8 @@ class LoginViewModel(
      * 非空时优先于服务端返回的账号名 —— 否则登录一过，自定义名称就被覆盖掉。
      */
     private val displayName: String? = null,
+    /** 存为隐私源：敏感字段与令牌都走 DEK 加密区（见 [ServerConfig.isPrivate]）。 */
+    private val isPrivate: Boolean = false,
 ) {
     private val _state = MutableStateFlow(LoginUiState())
     val state: StateFlow<LoginUiState> = _state
@@ -52,8 +54,10 @@ class LoginViewModel(
         _state.value = s.copy(status = LoginStatus.SUBMITTING, message = null)
         try {
             val result = login(s.username, s.password)
-            // 顺序是有意的：先落盘 userId 与令牌，上层才能安全构造 MediaSource（取数接口 requireNotNull(userId)）
-            tokenStore.put(serverId, result.accessToken)
+            // 顺序是有意的：**先配置、后令牌**。
+            // · 配置里带 userId，上层才能安全构造 MediaSource（取数接口 requireNotNull(userId)）；
+            // · 私有源的令牌要写进加密区，而加密条目是随配置落盘才建立的 ——
+            //   反过来写的话令牌会先进普通 `token_<id>.bin`，等于绕过加密区。
             configStore.upsert(
                 ServerConfig(
                     id = serverId,
@@ -62,8 +66,10 @@ class LoginViewModel(
                     name = displayName?.takeIf { it.isNotBlank() } ?: result.user.name ?: baseUrl,
                     baseUrl = baseUrl,
                     userId = result.user.id,
+                    isPrivate = isPrivate,
                 )
             )
+            tokenStore.put(serverId, result.accessToken)
             // 新登录的服务器即当前服务器：否则「添加第二台服务器」后仍停在旧服务器上，
             // 用户会以为添加失败（见 M5 服务器管理）。
             settingsStore?.setActiveServerId(serverId)

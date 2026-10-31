@@ -49,6 +49,14 @@ data class AddServerUiState(
     val error: String? = null,
     /** 编辑模式下的原始配置；null = 新增服务器（同时作为「是否编辑」的判据）。 */
     val original: ServerConfig? = null,
+    /**
+     * 存为隐私源（`docs/隐私模式方案.md` §7.1 第 6 步）。
+     *
+     * 只有隐私模式下才允许打开（[allowPrivate]）；列表里看不到的服务器不可能被标成隐私。
+     */
+    val saveAsPrivate: Boolean = false,
+    /** 当前是否处于隐私模式 —— 决定「存为隐私源」这一行是否出现。 */
+    val allowPrivate: Boolean = false,
 ) {
     val isEditing: Boolean get() = original != null
     val isSmb: Boolean get() = kind.isSmb
@@ -155,6 +163,8 @@ class AddServerViewModel(
     initial: ServerConfig? = null,
     /** 新增时先分配 id：重试登录时沿用同一个 id，不会写出一堆半成品配置。 */
     private val serverId: String = UUID.randomUUID().toString(),
+    /** 是否处于隐私模式：为 true 时页面才显示「存为隐私源」开关。 */
+    allowPrivate: Boolean = false,
 ) {
     private val _state = MutableStateFlow(
         if (initial == null) {
@@ -162,6 +172,7 @@ class AddServerViewModel(
                 kind = initialKind,
                 protocol = initialKind.protocols.first(),
                 port = initialKind.defaultPort.toString(),
+                allowPrivate = allowPrivate,
             )
         } else {
             val parsed = parseServerUrl(initial.baseUrl)
@@ -176,6 +187,8 @@ class AddServerViewModel(
                 path = parsed.path,
                 name = initial.name,
                 original = initial,
+                saveAsPrivate = initial.isPrivate,
+                allowPrivate = allowPrivate,
             )
         }
     )
@@ -278,6 +291,12 @@ class AddServerViewModel(
         _state.value = _state.value.copy(name = v, error = null)
     }
 
+    /** 「存为隐私源」开关：只在隐私模式下可见可用。 */
+    fun onSaveAsPrivateChange(v: Boolean) {
+        if (!_state.value.allowPrivate) return
+        _state.value = _state.value.copy(saveAsPrivate = v, error = null)
+    }
+
     fun onUsernameChange(v: String) {
         _state.value = _state.value.copy(username = v, error = null)
     }
@@ -344,7 +363,11 @@ class AddServerViewModel(
                 // 无密码模式不能把上一次残留的密码带上去
                 password = if (s.authMode == AuthMode.PASSWORD) s.password else "",
                 apiKey = s.apiKey.trim(),
+                domain = s.domain.trim(),
                 activate = !s.isEditing,
+                // 编辑已有服务器时不在本页切换「隐私归属」——存量源的挪动要走设置页的「移入隐私」，
+                // 那里才会把令牌一起从普通区迁进加密区（决策 22）。
+                isPrivate = s.saveAsPrivate && s.allowPrivate && !s.isEditing,
             )
         )
         _state.value = when (result) {

@@ -16,7 +16,9 @@ abstract class HttpMediaSource(
     override val serverId: String get() = api.config.serverId
 
     /** 当前播放会话（`planPlayback` 时建立；进度上报需要其中的 PlayMethod / PlaySessionId / MediaSourceId）。 */
+    @Volatile
     private var session: PlaybackSession? = null
+    @Volatile
     private var reportedStart = false
 
     abstract fun mapItem(dto: BaseItemDto, libraryId: String?): MediaItemDto

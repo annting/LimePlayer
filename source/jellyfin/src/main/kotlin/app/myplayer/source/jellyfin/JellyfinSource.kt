@@ -58,7 +58,7 @@ class JellyfinSource(
                     authHeaderStyle = AuthHeaderStyle.MEDIABROWSER_AUTHORIZATION,
                 ),
             ),
-            mapper = EmbyMapper(serverId),
+            mapper = EmbyMapper(serverId, SourceType.JELLYFIN),
         )
     }
 }

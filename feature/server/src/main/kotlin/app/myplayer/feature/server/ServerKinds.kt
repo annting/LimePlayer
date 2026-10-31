@@ -9,8 +9,8 @@ import app.myplayer.core.model.SourceType
  * 不同类型的默认端口、可选协议、认证方式、是否要共享目录都不一样，
  * 所以把这些差异收进 [ServerKind]，页面只读属性、不写 `if (type == ...)`。
  *
- * ⚠️ [ServerKind.SMB] 目前**没有对应的源模块**（`sourceType == null`）：
- * 页面上可以完整填写、可以做 445 端口探活，但「保存 / 登录」不开。
+ * [ServerKind.SMB] 自 2026-10-25 起有真实源（`:source:smb`）：
+ * 保存 = 用账号密码真实连一次共享目录（`SmbClient.testConnection`），不通过就不落库。
  */
 
 /** 协议行上的取值。SMB 不是 HTTP，但它占的就是「协议」这一行的位置。 */
@@ -74,7 +74,7 @@ enum class ServerKind(
     SMB(
         label = "SMB",
         description = "Windows / NAS 共享目录 · 默认 445",
-        sourceType = null,
+        sourceType = SourceType.SMB,
         defaultPort = 445,
         protocols = listOf(NetProtocol.SMB),
         authModes = emptyList(),
@@ -235,8 +235,15 @@ data class SignInRequest(
     val username: String,
     val password: String,
     val apiKey: String,
+    /** SMB 的域 / 工作组（只有 SMB 用；HTTP 源为空）。 */
+    val domain: String = "",
     /** 登录成功后是否把它设为当前服务器（新增 = true，重新登录 = false）。 */
     val activate: Boolean,
+    /**
+     * 是否存为**隐私源**（档一）：配置的敏感字段与令牌落 DEK 加密区，
+     * `servers.bin` 只留壳。只有隐私模式下才会为 true。
+     */
+    val isPrivate: Boolean = false,
 )
 
 sealed interface SignInResult {

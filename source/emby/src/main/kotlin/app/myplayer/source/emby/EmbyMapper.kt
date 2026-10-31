@@ -10,7 +10,11 @@ import app.myplayer.core.model.UserData
 import app.myplayer.source.httpapi.BaseItemDto
 import app.myplayer.source.httpapi.MediaStreamDto
 
-class EmbyMapper(private val serverId: String) {
+class EmbyMapper(
+    private val serverId: String,
+    /** P2-8：Jellyfin 复用本 mapper，条目 sourceType 应是 JELLYFIN 而非硬编码 EMBY。 */
+    private val sourceType: SourceType = SourceType.EMBY,
+) {
     fun map(dto: BaseItemDto, libraryId: String?): MediaItemDto {
         val src = dto.mediaSources?.firstOrNull()
         // 实测（Emby 4.10）：MediaSources 层可能只有 Container/Size/Bitrate，
@@ -19,7 +23,7 @@ class EmbyMapper(private val serverId: String) {
         val video = streams.firstOrNull { it.type == "Video" }
         val audio = streams.filter { it.type == "Audio" }
         return MediaItemDto(
-            id = dto.id, serverId = serverId, sourceType = SourceType.EMBY,
+            id = dto.id, serverId = serverId, sourceType = sourceType,
             title = dto.name ?: "", seriesName = dto.seriesName, seriesId = dto.seriesId,
             seasonNumber = dto.parentIndexNumber, episodeNumber = dto.indexNumber,
             durationTicks = Ticks(dto.runTimeTicks ?: 0L),        // Long(tick) → Ticks

@@ -34,11 +34,13 @@ import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.MyPlayerTheme
 import app.myplayer.core.designsystem.Spacing
+import app.myplayer.core.designsystem.components.AlertIcon
 import app.myplayer.core.designsystem.components.AppButton
 import app.myplayer.core.designsystem.components.AppButtonStyle
 import app.myplayer.core.designsystem.components.CheckIcon
 import app.myplayer.core.designsystem.components.PageHeader
 import app.myplayer.core.designsystem.components.SettingsGroup
+import app.myplayer.core.designsystem.components.SettingsSwitchRow
 import app.myplayer.core.designsystem.components.SettingsInputRow
 import app.myplayer.core.designsystem.components.SettingsMenuRow
 import app.myplayer.core.designsystem.components.SettingsOption
@@ -92,6 +94,10 @@ fun AddServerScreen(
             item(key = "basic") { BasicInfoGroup(state, form, isEdit) }
             item(key = "network") { NetworkGroup(state, form) }
             item(key = "auth") { AuthGroup(state, form) }
+            // 「存为隐私源」只在隐私模式下、且是新增时出现（存量源的挪动走设置页「移入隐私」）
+            if (state.allowPrivate && !isEdit) {
+                item(key = "privacy") { PrivacyGroup(state, form) }
+            }
             item(key = "note") { Footnote(state) }
         }
         BottomActionBar(state, form)
@@ -112,6 +118,7 @@ data class AddServerForm(
     val onPasswordChange: (String) -> Unit = {},
     val onApiKeyChange: (String) -> Unit = {},
     val onNameChange: (String) -> Unit = {},
+    val onSaveAsPrivateChange: (Boolean) -> Unit = {},
     val onTest: () -> Unit = {},
     val onSubmit: () -> Unit = {},
 )
@@ -225,7 +232,7 @@ private fun AuthGroup(state: AddServerUiState, form: AddServerForm) {
                     title = "密码",
                     value = state.password,
                     onValueChange = form.onPasswordChange,
-                    placeholder = "",
+                    placeholder = if (state.isSmb) "guest 可留空" else "服务端密码",
                     isPassword = true,
                     imeAction = ImeAction.Done,
                     showDivider = !last,
@@ -241,6 +248,21 @@ private fun AuthGroup(state: AddServerUiState, form: AddServerForm) {
                 )
             }
         }
+    }
+}
+
+// ---- 分组 4：隐私（仅隐私模式下新增时出现） ----
+
+@Composable
+private fun PrivacyGroup(state: AddServerUiState, form: AddServerForm) {
+    SettingsGroup(title = "隐私") {
+        SettingsSwitchRow(
+            title = "存为隐私源",
+            description = "普通模式下不显示这台服务器：不列举、不连接、地址与账号只存在加密区。",
+            checked = state.saveAsPrivate,
+            onCheckedChange = form.onSaveAsPrivateChange,
+            showDivider = false,
+        )
     }
 }
 
@@ -368,25 +390,24 @@ private fun HintBanner(hint: BottomHint) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(AppShape.control)
-            .background(app.surface3)
-            .heightIn(min = 36.dp)
+            // 语义色 10% 叠在底色上：既表明「这是状态行」，又不至于变成一块彩色卡片。
+            // 旧做法是 surface3 实底 + 6dp 圆点，权重比页脚说明还低，根本不像错误提示。
+            .background(accent.copy(alpha = 0.10f))
+            .heightIn(min = 44.dp)
             .padding(horizontal = Spacing.md.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (hint is BottomHint.Success) {
-            CheckIcon(tint = accent, modifier = Modifier.size(15.dp))
+            CheckIcon(tint = accent, modifier = Modifier.size(16.dp))
         } else {
-            Box(
-                Modifier
-                    .size(6.dp)
-                    .clip(AppShape.circle)
-                    .background(accent),
-            )
+            // 18dp 语义图标替掉原来的 6dp 圆点
+            AlertIcon(tint = accent, modifier = Modifier.size(18.dp))
         }
         Spacer(Modifier.width(Spacing.sm.dp))
         Text(
             text = hint.text,
-            style = MaterialTheme.typography.labelSmall,
+            // 12sp：11.5sp 在 360dp 宽的屏上，中文提示偏小一号
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
             color = accent,
         )

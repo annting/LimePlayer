@@ -63,16 +63,16 @@ class AddServerViewModelTest {
             .inOrder()
     }
 
-    @Test fun `SMB 不可提交并给出明确原因`() {
+    @Test fun `SMB 已接入：缺共享目录时不能提交`() {
         val v = vm()
         v.onSelectKind(ServerKind.SMB)
         v.onAddressChange("192.168.31.15")
-        v.onShareChange("/media")
         v.onUsernameChange("guest")
         val s = v.state.value
-        assertThat(s.kind.isPlayable).isFalse()
+        // 2026-10-25 起 SMB 有真实源（:source:smb），不再是「未接入」的灰按钮
+        assertThat(s.kind.isPlayable).isTrue()
         assertThat(s.canSubmit).isFalse()
-        assertThat(s.submitBlockReason).contains("SMB")
+        assertThat(s.submitBlockReason).contains("共享目录")
     }
 
     @Test fun `从 SMB 切回 Emby 清空域与目录并恢复端口`() {
@@ -326,14 +326,20 @@ class AddServerViewModelTest {
         assertThat(v.state.value.submitStatus).isEqualTo(SubmitStatus.Done)
     }
 
-    @Test fun `SMB 点提交不发请求`() = runTest {
+    @Test fun `SMB 填全并测通后提交会走登录网关`() = runTest {
         var called = false
-        val v = vm(auth = ServerAuthGateway { called = true; SignInResult.Ok })
+        val v = vm(
+            probe = reachable,
+            auth = ServerAuthGateway { called = true; SignInResult.Ok },
+        )
         v.onSelectKind(ServerKind.SMB)
         v.onAddressChange("192.168.31.15")
-        v.onShareChange("media")
+        v.onShareChange("video")
+        v.onUsernameChange("ting.an")
+        v.onPasswordChange("secret")
+        v.onTest()
         v.onSubmit()
-        assertThat(called).isFalse()
+        assertThat(called).isTrue()
     }
 
     // ---- 类型 ⇄ 源 的映射 ----
@@ -342,7 +348,7 @@ class AddServerViewModelTest {
         assertThat(ServerKind.EMBY.sourceType).isEqualTo(SourceType.EMBY)
         assertThat(ServerKind.JELLYFIN.sourceType).isEqualTo(SourceType.JELLYFIN)
         assertThat(ServerKind.FNOS.sourceType).isEqualTo(SourceType.FNOS)
-        assertThat(ServerKind.SMB.sourceType).isNull()          // 源模块未接入
+        assertThat(ServerKind.SMB.sourceType).isEqualTo(SourceType.SMB)
         assertThat(ServerKind.EMBY.defaultPort).isEqualTo(8096)
         assertThat(ServerKind.FNOS.defaultPort).isEqualTo(5666)
         assertThat(ServerKind.SMB.defaultPort).isEqualTo(445)
