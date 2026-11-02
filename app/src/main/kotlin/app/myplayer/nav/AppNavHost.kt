@@ -34,8 +34,6 @@ import app.myplayer.core.model.MediaSource
 import app.myplayer.core.model.SourceType
 import app.myplayer.feature.detail.DetailRoute
 import app.myplayer.feature.detail.PersonRoute
-import app.myplayer.feature.library.LibraryScreen
-import app.myplayer.feature.library.LibraryViewModel
 import app.myplayer.feature.library.home.HomeDataSource
 import app.myplayer.feature.library.home.HomeScreen
 import app.myplayer.feature.library.home.HomeServerOption
@@ -273,6 +271,16 @@ fun AppNavHost(
     privateSecrets: app.myplayer.core.datastore.PrivacyServerSecretStore? = null,
     /** 文件库存（SMB 条目的 `isPrivate` 标记写入口）。null = 未接（预览/测试）。 */
     fileCatalog: app.myplayer.core.model.FileCatalogStore? = null,
+    /** 本机视频源（「本机」tab）；null = 未授权。 */
+    localSource: app.myplayer.source.local.LocalMediaSource? = null,
+    /** 本机已授权根（多根；含授权已失效的，供管理页展示/移除）。 */
+    localRoots: List<app.myplayer.core.datastore.LocalRoot> = emptyList(),
+    /** 是否已获得「所有文件访问权限」（全盘加速档，docs/12 §3.1）。 */
+    localAllFilesAccess: Boolean = false,
+    /** 本机根目录（SAF tree URI）持久化。 */
+    localRootStore: app.myplayer.core.datastore.LocalRootStore? = null,
+    /** 本机「忽略文件夹」偏好。 */
+    localIgnoreStore: app.myplayer.core.model.LocalIgnoreStore? = null,
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -450,16 +458,29 @@ fun AppNavHost(
                     privateSecrets = privateSecrets,
                     fileCatalog = fileCatalog,
                     homeRefreshSignal = homeRefreshSignal.intValue,
+                    localSource = localSource,
+                    localRoots = localRoots,
+                    localAllFilesAccess = localAllFilesAccess,
+                    localRootStore = localRootStore,
+                    localIgnoreStore = localIgnoreStore,
+                    // 本机 tab 的详情/播放走 `local=true` 路由参数，让下层选 localSource 而不是活动源
+                    onPlayLocal = { itemId -> nav.navigate("${Routes.PLAYER}/$itemId?local=true") },
+                    onOpenDetailLocal = { itemId -> nav.navigate("${Routes.DETAIL}/$itemId?local=true") },
                 )
             }
         }
 
         composable(
-            route = "${Routes.DETAIL}/{itemId}",
-            arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
+            route = "${Routes.DETAIL}/{itemId}?local={local}",
+            arguments = listOf(
+                navArgument("itemId") { type = NavType.StringType },
+                navArgument("local") { type = NavType.BoolType; defaultValue = false },
+            ),
         ) { entry ->
             val itemId = entry.arguments?.getString("itemId").orEmpty()
-            val src = source
+            // 本机条目的详情走本机源；其余走当前活动源
+            val isLocal = entry.arguments?.getBoolean("local") ?: false
+            val src = if (isLocal) localSource else source
             if (src != null && itemId.isNotEmpty()) {
                 val context = androidx.compose.ui.platform.LocalContext.current
                 // 缺海报时的本地抽帧兜底（任务 3-7）：与库页同一策略
@@ -490,7 +511,13 @@ fun AppNavHost(
                         homeRefreshSignal.intValue++
                         listRefreshSignal.intValue++
                     },
-                    onPlay = { item -> nav.navigate("${Routes.PLAYER}/${item.id}") },
+                    // 本机条目的播放必须带 `local=true`，否则播放页会拿**活动服务器**的源去 stat
+                    // 这条本机路径 → 直接「文件不存在」（2026-11-01 全盘模式实测踩到）。
+                    onPlay = { item ->
+                        nav.navigate(
+                            "${Routes.PLAYER}/${item.id}" + if (isLocal) "?local=true" else "",
+                        )
+                    },
                     // 标记已看成功 → 服务端权威 UserData 写回本地缓存（`02` §5.1）
                     onUserDataChanged = { sid, iid, ud -> repository.updateUserData(sid, iid, ud) },
                     // 服务端删除成功 → 清理本地缓存并返回上一页（`03` §6.3）
@@ -599,8 +626,11 @@ fun AppNavHost(
         }
 
         composable(
-            route = "${Routes.PLAYER}/{itemId}",
-            arguments = listOf(navArgument("itemId") { type = NavType.StringType }),
+            route = "${Routes.PLAYER}/{itemId}?local={local}",
+            arguments = listOf(
+                navArgument("itemId") { type = NavType.StringType },
+                navArgument("local") { type = NavType.BoolType; defaultValue = false },
+            ),
             // 播放页退场按「画面是否横向」分流（用户 2026-10-23 定）：
             //   横向画面 = 向下滑出（对齐 VidHub 的「移出滑动」，下层页面不动）
             //   非横向   = 向右滑出（与其他页面完全一致）
@@ -617,7 +647,8 @@ fun AppNavHost(
             },
         ) { entry ->
             val itemId = entry.arguments?.getString("itemId").orEmpty()
-            val src = source
+            val isLocal = entry.arguments?.getBoolean("local") ?: false
+            val src = if (isLocal) localSource else source
             if (src != null && itemId.isNotEmpty()) {
                 PlayerRoute(
                     itemId = itemId,
@@ -904,8 +935,8 @@ internal fun LibraryDetailDestination(
         loadImage = { item, kind -> loadImageWithFallback(item, kind, source, caps, thumbs) },
         onBack = onBack,
         onOpenDetail = onOpenDetail,
-        // SMB 视频没有条目 id，播放器拿路径当 id（source:smb 接入后走本地播放链路）
-        onPlayPath = onPlay,
+        // 播放键：Emby 传条目 id、SMB 传文件路径（都走同一个播放页路由）
+        onPlay = onPlay,
         onLongPress = vm::longPressSelect,
         onToggleSelect = vm::toggleSelect,
         onExitSelection = vm::exitSelection,
@@ -1049,6 +1080,7 @@ internal fun SearchDestination(
     serverId: String,
     caps: ClientCapabilities,
     localThumbnails: Boolean,
+    onPlay: (String) -> Unit,
     onOpenDetail: (String) -> Unit,
     /** 隐私会话结束计数：非 0 变化时清掉搜索历史与当前查询（历史里可能是隐私标题）。 */
     privacyResetSignal: Int = 0,
@@ -1083,69 +1115,16 @@ internal fun SearchDestination(
         onClearHistory = vm::clearRecent,
         onToggleHistoryExpanded = vm::toggleHistoryExpanded,
         loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
+        // 卡片中央播放键：与「媒体库」「首页」同一个入口，按条目 id 进播放页
+        onPlay = { item ->
+            vm.rememberQuery()
+            onPlay(item.id)
+        },
         // 实时搜索下用户通常不按回车，直接把「点开结果」作为有效搜索的完成信号写入历史
         onOpenDetail = { item ->
             vm.rememberQuery()
             onOpenDetail(item.id)
         },
-    )
-}
-
-/** 媒体库 tab：库页（库 Tab + 海报网格）。ViewModel 以 serverId 为 key 持久，切换 tab 不丢状态。 */
-@Composable
-internal fun LibraryDestination(
-    repository: LibraryRepository,
-    serverConfigStore: ServerConfigStore,
-    source: MediaSource?,
-    serverId: String,
-    caps: ClientCapabilities,
-    localThumbnails: Boolean,
-    onPlay: (String) -> Unit,
-    onOpenDetail: (String) -> Unit,
-    /** 首页「查看全部」带过来的库 id；选中后调 [onLibraryOpened] 清掉，避免下次进 tab 又被强行切库。 */
-    openLibraryId: String? = null,
-    onLibraryOpened: () -> Unit = {},
-) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    // 缺海报时的本地抽帧兜底（任务 3-7）：开关关闭或没有源时不构造
-    val thumbs = remember(source, serverId, localThumbnails) {
-        if (localThumbnails && source != null) LocalThumbnailProvider(context, source, caps) else null
-    }
-    val vm: LibraryViewModel = viewModel(
-        key = "library-$serverId",
-        factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                LibraryViewModel(repository, serverId) as T
-        },
-    )
-    val state by vm.state.collectAsStateWithLifecycle()
-
-    // 「查看全部」带过来的库：库列表可能还在从 Room/服务端来的路上，到位后再选中
-    LaunchedEffect(openLibraryId, state.libraries) {
-        val target = openLibraryId ?: return@LaunchedEffect
-        if (state.libraries.any { it.id == target }) {
-            vm.selectLibrary(target)
-            onLibraryOpened()
-        }
-    }
-
-    // 首次进入即同步一次（分页落 Room，UI 只读 Room）
-    LaunchedEffect(serverId, source) { source?.let { vm.refresh(it) } }
-
-    val configs by serverConfigStore.observeAll().collectAsStateWithLifecycle(initialValue = emptyList())
-    val serverLabel = configs.firstOrNull { it.id == serverId }?.name
-
-    LibraryScreen(
-        state = state,
-        loadImage = { item -> loadPosterWithFallback(item, source, caps, thumbs) },
-        onSelectLibrary = vm::selectLibrary,
-        onPlay = { item -> onPlay(item.id) },
-        onOpenDetail = { item -> onOpenDetail(item.id) },
-        onSort = vm::setSort,
-        onFilter = vm::setFilter,
-        onResetFilter = vm::resetFilter,
-        serverLabel = serverLabel,
     )
 }
 

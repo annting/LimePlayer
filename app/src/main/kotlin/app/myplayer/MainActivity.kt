@@ -46,6 +46,8 @@ import app.myplayer.core.datastore.SettingsStore
 import app.myplayer.core.datastore.TokenStore
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.MyPlayerTheme
+import app.myplayer.core.designsystem.components.AppBadge
+import app.myplayer.core.designsystem.components.AppBadgeTone
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MediaSource
@@ -93,6 +95,12 @@ class MainActivity : FragmentActivity() {
 
     /** 文件库存（SMB/本地条目的档二隐私标记写入口）。 */
     @Inject lateinit var fileCatalog: app.myplayer.core.model.FileCatalogStore
+
+    /** 本机根目录（SAF tree URI）持久化：null = 未授权。 */
+    @Inject lateinit var localRootStore: app.myplayer.core.datastore.LocalRootStore
+
+    /** 本机「忽略文件夹」偏好。 */
+    @Inject lateinit var localIgnoreStore: app.myplayer.core.model.LocalIgnoreStore
 
     /** 隐私会话（唯一持有者）：状态驱动可见性策略，也决定 FLAG_SECURE 与重锁。 */
     @Inject lateinit var privacySessionManager: PrivacySessionManager
@@ -412,6 +420,48 @@ class MainActivity : FragmentActivity() {
         androidx.compose.runtime.DisposableEffect(source) {
             onDispose { (source as? SmbMediaSource)?.close() }
         }
+
+        // ── 本机视频源（docs/12）──
+        // 与「活动服务器」完全独立：本机是内置 tab，不是服务器（不写 ServerConfig）。
+        // 两条取文件通道（docs/12 §3.1）：
+        //  · 全盘访问（用户在系统设置里开的 MANAGE_EXTERNAL_STORAGE）→ File 直扫，优先级最高；
+        //  · 否则走 SAF 多根（store 里的 tree URI，逐根校验持久授权是否仍有效）。
+        val localRoots by localRootStore.observe()
+            .collectAsStateWithLifecycle<List<app.myplayer.core.datastore.LocalRoot>>(initialValue = emptyList())
+        val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+
+        // 全盘权限只能去系统设置开，回来必须重查一次（否则要杀进程才生效）
+        var allFilesOn by remember { androidx.compose.runtime.mutableStateOf(app.myplayer.source.local.hasAllFilesAccess()) }
+        val lifecycleOwner = LocalLifecycleOwner.current
+        androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    allFilesOn = app.myplayer.source.local.hasAllFilesAccess()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        }
+
+        val grantedLocalRoots = remember(localRoots) {
+            localRoots.filter { app.myplayer.source.local.isTreeUriGranted(appContext, it.treeUri) }
+        }
+        val localSource = remember(grantedLocalRoots, allFilesOn) {
+            val ready = allFilesOn || grantedLocalRoots.isNotEmpty()
+            if (!ready) {
+                null
+            } else {
+                app.myplayer.source.local.LocalMediaSource(
+                    context = appContext,
+                    treeUris = grantedLocalRoots.map { it.treeUri },
+                    serverId = app.myplayer.source.local.LocalMediaSource.DEFAULT_SERVER_ID,
+                    playback = playbackStore,
+                    catalog = fileCatalog,
+                    ignore = localIgnoreStore,
+                    allFilesAccess = allFilesOn,
+                )
+            }
+        }
         val showWelcome = activeConfig == null || source == null
 
         Box(Modifier.fillMaxSize()) {
@@ -480,6 +530,11 @@ class MainActivity : FragmentActivity() {
                     privacyActive = privacyActive,
                     privateSecrets = privacySecrets,
                     fileCatalog = fileCatalog,
+                    localSource = localSource,
+                    localRoots = localRoots,
+                    localAllFilesAccess = allFilesOn,
+                    localRootStore = localRootStore,
+                    localIgnoreStore = localIgnoreStore,
                     // datastore 的 ScreenOrientation → 播放模块的 PlayerOrientation（分层映射）
                     inPictureInPicture = pipState.value,
                     defaultOrientation = when (settings?.screenOrientation) {
@@ -549,33 +604,20 @@ class MainActivity : FragmentActivity() {
  *
  * 之所以放在右上角而不是状态栏：这里由应用自己绘制，`FLAG_SECURE` 生效时它仍然可见，
  * 且不会因为系统状态栏图标被折叠而消失。
+ *
+ * 视觉走设计系统 [AppBadge]（`docs/13-组件统一修复任务.md` T11）：描边胶囊 + 圆点 + 小字，
+ * 与设置页服务器行的「隐私 / 当前」是同一枚徽章。
  */
 @Composable
 private fun PrivacyActiveBadge(
     modifier: Modifier = Modifier,
     onClick: () -> Unit = {},
 ) {
-    val app = LocalAppColors.current
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(50))
-            .background(app.surface2)
-            .border(1.dp, app.borderStrong, RoundedCornerShape(50))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(6.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary),
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = "隐私",
-            style = MaterialTheme.typography.labelSmall,
-            color = app.text3,
-        )
-    }
+    AppBadge(
+        text = "隐私",
+        modifier = modifier,
+        tone = AppBadgeTone.Outline,
+        dot = true,
+        onClick = onClick,
+    )
 }

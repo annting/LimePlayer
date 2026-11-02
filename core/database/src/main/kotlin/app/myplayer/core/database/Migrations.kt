@@ -128,3 +128,19 @@ val MIGRATION_3_4 = object : Migration(3, 4) {
         )
     }
 }
+
+/**
+ * v4 → v5：新增 `local_ignored_folders`（本机视频源的「忽略文件夹」偏好，
+ * `docs/12-本机视频播放方案.md` §4.6）。
+ *
+ * 纯增量：全新表，不触碰任何既有表。SQL 必须与 `schemas/…/5.json` 的 `createSql` 逐字一致。
+ */
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `local_ignored_folders` (" +
+                "`sourceId` TEXT NOT NULL, `folderPath` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`sourceId`, `folderPath`))"
+        )
+    }
+}

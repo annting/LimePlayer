@@ -31,6 +31,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.components.AppChip
+import app.myplayer.core.designsystem.components.SectionLabel
 import app.myplayer.core.designsystem.components.CheckIcon
 import app.myplayer.core.playback.TrackInfo
 import app.myplayer.core.playback.TrackKind
@@ -121,7 +122,7 @@ private fun SheetContent(
     onSpeed: (Float) -> Unit,
     onTrack: (TrackKind, String?) -> Unit,
 ) {
-    SectionTitle("画面比例")
+    SectionLabel("画面比例")
     Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
         ScaleMode.entries.forEachIndexed { i, mode ->
             if (i > 0) Spacer(Modifier.width(8.dp))
@@ -133,7 +134,7 @@ private fun SheetContent(
         }
     }
 
-    SectionTitle("播放速度")
+    SectionLabel("播放速度")
     Speeds.chunked(4).forEachIndexed { rowIndex, row ->
         if (rowIndex > 0) Spacer(Modifier.height(8.dp))
         Row(Modifier.fillMaxWidth()) {
@@ -148,7 +149,7 @@ private fun SheetContent(
         }
     }
 
-    SectionTitle("音轨")
+    SectionLabel("音轨")
     TrackSection(
         tracks = state.tracks.filter { it.kind == TrackKind.AUDIO },
         emptyText = "该视频只有一条音频（或暂未解析出轨道）",
@@ -156,7 +157,7 @@ private fun SheetContent(
         allowOff = false,
     )
 
-    SectionTitle("字幕")
+    SectionLabel("字幕")
     TrackSection(
         tracks = state.tracks.filter { it.kind == TrackKind.SUBTITLE },
         emptyText = "该视频没有内嵌字幕",
@@ -178,15 +179,6 @@ internal val Speeds: List<Pair<Float, String>> = listOf(
     3f to "3.0x",
 )
 
-@Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = LocalAppColors.current.text3,
-        modifier = Modifier.padding(top = 18.dp, bottom = 10.dp),
-    )
-}
 
 @Composable
 private fun TrackSection(
@@ -201,53 +193,19 @@ private fun TrackSection(
         return
     }
     if (allowOff) {
-        TrackRow(
+        SelectableRow(
             label = "关闭字幕",
-            sub = null,
             selected = tracks.none { it.isSelected },
-            enabled = true,
             onClick = { onSelect(null) },
         )
     }
     tracks.forEach { t ->
-        TrackRow(
+        SelectableRow(
             label = t.label,
             sub = t.codec?.let { c -> if (t.isSupported) c else "$c · 当前设备不支持" },
             selected = t.isSelected,
             enabled = t.isSupported,
             onClick = if (t.isSupported) ({ onSelect(t.id) }) else null,
         )
-    }
-}
-
-@Composable
-private fun TrackRow(
-    label: String,
-    sub: String?,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: (() -> Unit)?,
-) {
-    val scheme = MaterialTheme.colorScheme
-    val app = LocalAppColors.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(enabled = enabled && onClick != null) { onClick?.invoke() }
-            .padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (enabled) scheme.onSurface else app.text3,
-            )
-            if (sub != null) {
-                Text(sub, style = MaterialTheme.typography.labelSmall, color = app.text3)
-            }
-        }
-        if (selected) CheckIcon(tint = scheme.primary)
     }
 }

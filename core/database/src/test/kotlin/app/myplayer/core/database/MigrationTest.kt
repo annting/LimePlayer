@@ -49,7 +49,7 @@ class MigrationTest {
 
         // 当前库版本是 v4：1→4 走连续迁移（真机上的真实路径）
         val db = Room.databaseBuilder(ctx, MediaDatabase::class.java, dbName)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -85,7 +85,7 @@ class MigrationTest {
     fun `migration is incremental only - version becomes 2 with all v1 tables intact`() = runTest {
         createV1Database()
         val db = Room.databaseBuilder(ctx, MediaDatabase::class.java, dbName)
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -104,7 +104,7 @@ class MigrationTest {
         createV2Database()
 
         val db = Room.databaseBuilder(ctx, MediaDatabase::class.java, dbName)
-            .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {
@@ -143,7 +143,7 @@ class MigrationTest {
         createV3Database()
 
         val db = Room.databaseBuilder(ctx, MediaDatabase::class.java, dbName)
-            .addMigrations(MIGRATION_3_4)
+            .addMigrations(MIGRATION_3_4, MIGRATION_4_5)
             .allowMainThreadQueries()
             .build()
         try {

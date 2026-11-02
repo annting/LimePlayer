@@ -52,6 +52,7 @@ import app.myplayer.core.datastore.ScreenOrientation
 import app.myplayer.core.datastore.ServerConfig
 import app.myplayer.core.datastore.SubtitleStyle
 import app.myplayer.core.datastore.ThemeMode
+import app.myplayer.core.designsystem.components.AppConfirmDialog
 import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
@@ -67,6 +68,10 @@ import app.myplayer.core.designsystem.components.SettingsNavRow
 import app.myplayer.core.designsystem.components.SettingsOption
 import app.myplayer.core.designsystem.components.SettingsRow
 import app.myplayer.core.designsystem.components.SettingsSwitchRow
+import app.myplayer.core.designsystem.components.AppBadge
+import app.myplayer.core.designsystem.components.AppBadgeTone
+import app.myplayer.core.designsystem.components.SettingsAction
+import app.myplayer.core.designsystem.components.SettingsActionMenuRow
 import app.myplayer.core.model.SourceType
 
 /**
@@ -512,26 +517,16 @@ private fun ServerGroup(
     }
 
     pendingDelete?.let { row ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("删除服务器") },
-            text = { Text("删除「${row.config.name}」？其登录凭据会一并清除，媒体库缓存保留。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDelete(row.config.id)
-                        pendingDelete = null
-                    },
-                ) {
-                    Text("删除", color = scheme.error)
-                }
+        AppConfirmDialog(
+            title = "删除服务器",
+            message = "删除「${row.config.name}」？其登录凭据会一并清除，媒体库缓存保留。",
+            confirmText = "删除",
+            onConfirm = {
+                onDelete(row.config.id)
+                pendingDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
-            },
-            // 弹层同样 12dp 圆角，禁止胶囊
-            shape = AppShape.card,
-            containerColor = scheme.surface,
+            onDismiss = { pendingDelete = null },
+            destructive = true,
         )
     }
 }
@@ -545,120 +540,52 @@ private fun ServerRowItem(
     privacyActive: Boolean = false,
     onMoveToPrivacy: () -> Unit = {},
 ) {
-    val app = LocalAppColors.current
-    val scheme = MaterialTheme.colorScheme
-    var menuOpen by remember { mutableStateOf(false) }
     val host = row.config.baseUrl.removePrefix("http://").removePrefix("https://")
 
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val menuWidth = 168.dp
-        val offsetX = (maxWidth - menuWidth).coerceAtLeast(0.dp)
-
-        SettingsRow(
-            title = row.config.name,
-            description = "$host · ${row.config.sourceType.name.lowercase()}",
-            onClick = { if (!row.active) onSetActive(row.config.id) },
-            // 不再放 leading 图标：同组的「添加服务器」没有图标，带图标那一行的文字会比它
-            // 右移 32dp（20 图标 + 12 间距），左对齐会断。组内要么都有、要么都没有 —— 选「都没有」。
-            trailing = {
-                if (row.config.isPrivate) {
-                    // 隐私源标识：只在隐私模式下才可能看到这一行，标出来是为了避免误操作
-                    Text(
-                        text = "隐私",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = app.text3,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(app.surface2)
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                    )
-                    Spacer(Modifier.width(Spacing.sm.dp))
-                }
-                if (row.active) {
-                    Text(
-                        text = "当前",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = scheme.primary,
-                    )
-                    Spacer(Modifier.width(Spacing.sm.dp))
-                }
-                CircleIconButton(onClick = { menuOpen = true }) {
-                    MoreVerticalIcon(tint = app.text3, modifier = Modifier.size(18.dp))
-                }
-            },
-        )
-
-        DropdownMenu(
-            expanded = menuOpen,
-            onDismissRequest = { menuOpen = false },
-            modifier = Modifier.width(menuWidth),
-            offset = DpOffset(x = offsetX, y = 0.dp),
-            shape = AppShape.card,
-            containerColor = scheme.surface,
-            tonalElevation = 0.dp,
-            shadowElevation = 10.dp,
-            border = BorderStroke(Dimens.hairline, app.border),
-        ) {
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = "修改服务器",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.onSurface,
-                    )
-                },
-                onClick = {
-                    menuOpen = false
-                    onEdit()
-                },
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = if (row.active) "已是当前服务器" else "设为当前",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (row.active) app.text3 else scheme.onSurface,
-                    )
-                },
-                enabled = !row.active,
-                onClick = {
-                    menuOpen = false
-                    onSetActive(row.config.id)
-                },
-            )
-            if (privacyActive && !row.config.isPrivate) {
-                HorizontalDivider(color = app.border)
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = "移入隐私",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = scheme.onSurface,
-                        )
-                    },
-                    onClick = {
-                        menuOpen = false
-                        onMoveToPrivacy()
-                    },
-                )
+    // 行 + 动作菜单由设计系统统一（docs/13 T9）：之前这里手写了一套 BoxWithConstraints +
+    // DropdownMenu + 4 个 DropdownMenuItem，与 SettingsMenuRow 是两份定位逻辑。
+    // 徽章（隐私 / 当前）走 AppBadge（T11），不再各自 clip + background。
+    SettingsActionMenuRow(
+        title = row.config.name,
+        description = "$host · ${row.config.sourceType.name.lowercase()}",
+        onClick = { if (!row.active) onSetActive(row.config.id) },
+        // 不再放 leading 图标：同组的「添加服务器」没有图标，带图标那一行的文字会比它
+        // 右移 32dp（20 图标 + 12 间距），左对齐会断。组内要么都有、要么都没有 —— 选「都没有」。
+        badges = {
+            if (row.config.isPrivate) {
+                // 隐私源标识：只在隐私模式下才可能看到这一行，标出来是为了避免误操作
+                AppBadge(text = "隐私")
+                Spacer(Modifier.width(Spacing.sm.dp))
             }
-            HorizontalDivider(color = app.border)
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = "删除服务器",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = scheme.error,
-                    )
-                },
-                onClick = {
-                    menuOpen = false
-                    onRequestDelete()
-                },
-            )
-        }
-    }
+            if (row.active) {
+                AppBadge(text = "当前", tone = AppBadgeTone.Accent)
+                Spacer(Modifier.width(Spacing.sm.dp))
+            }
+        },
+        actions = listOf(
+            SettingsAction(label = "修改服务器", onClick = onEdit),
+            SettingsAction(
+                label = if (row.active) "已是当前服务器" else "设为当前",
+                enabled = !row.active,
+                onClick = { onSetActive(row.config.id) },
+            ),
+            if (privacyActive && !row.config.isPrivate) {
+                SettingsAction(
+                    label = "移入隐私",
+                    dividerBefore = true,
+                    onClick = onMoveToPrivacy,
+                )
+            } else {
+                null
+            },
+            SettingsAction(
+                label = "删除服务器",
+                destructive = true,
+                dividerBefore = true,
+                onClick = onRequestDelete,
+            ),
+        ).filterNotNull(),
+    )
 }
 
 // ---- 选项表（顶层常量，避免每次重组重新分配） ----

@@ -28,6 +28,8 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:designsystem"))
+    // 演员作品页复用全站唯一文件卡（docs/13 T7）
+    implementation(project(":core:media-ui"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

@@ -46,6 +46,17 @@ class FormattersTest {
     }
 
     @Test
+    fun `不足 1M 显示 KB 而不是 0MB`() {
+        // 125,128 字节（8 秒测试片）此前被四舍五入成「0MB」（2026-11-01 用户反馈）
+        assertThat(formatFileSize(125_128L)).isEqualTo("122KB")
+        assertThat(formatFileSize(1L * 1024)).isEqualTo("1KB")
+        // 极小文件也至少显示 1KB，不出现「0KB」
+        assertThat(formatFileSize(200L)).isEqualTo("1KB")
+        // 边界：正好 1MB 仍走 MB 分支
+        assertThat(formatFileSize(1024L * 1024)).isEqualTo("1MB")
+    }
+
+    @Test
     fun `1G 及以上显示一位小数 GB`() {
         assertThat(formatFileSize(1024L * 1024 * 1024)).isEqualTo("1.0GB")
         assertThat(formatFileSize(1536L * 1024 * 1024)).isEqualTo("1.5GB")
@@ -55,5 +66,20 @@ class FormattersTest {
     fun `体积未知或非正时不显示`() {
         assertThat(formatFileSize(0L)).isNull()
         assertThat(formatFileSize(-1L)).isNull()
+    }
+
+    @Test
+    fun `文件添加年份按本地时区取四位年`() {
+        // 2024-06-01 12:00 (UTC+8)
+        val ms = java.time.OffsetDateTime.of(2024, 6, 1, 12, 0, 0, 0, java.time.ZoneOffset.ofHours(8))
+            .toInstant().toEpochMilli()
+        assertThat(formatYear(ms)).isEqualTo("2024")
+    }
+
+    @Test
+    fun `年份未知时不显示`() {
+        assertThat(formatYear(null)).isNull()
+        assertThat(formatYear(0L)).isNull()
+        assertThat(formatYear(-1L)).isNull()
     }
 }

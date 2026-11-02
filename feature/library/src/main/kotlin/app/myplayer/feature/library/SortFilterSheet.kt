@@ -26,10 +26,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.components.AppChip
+import app.myplayer.core.designsystem.components.SectionLabel
 
 /**
  * 排序 / 筛选合并弹层（`02` §6.3 / 任务 3-4）：一个入口，两段内容 ——
@@ -44,6 +49,12 @@ fun SortFilterSheet(
     onSort: (SortSpec) -> Unit,
     onFilter: (FilterSpec) -> Unit,
     onReset: () -> Unit,
+    /**
+     * 本机视频场景：所有条目都是单个视频文件，没有「电影 / 剧集 / 集数」之分，
+     * 也没有收藏数据 → 隐藏这两个维度（`docs/12` §3 兼容处理），其余维度与媒体库一致。
+     */
+    showKindSection: Boolean = true,
+    showFavorites: Boolean = true,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scheme = MaterialTheme.colorScheme
@@ -102,18 +113,20 @@ fun SortFilterSheet(
                 )
             }
 
-            SectionLabel("类型")
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ItemKind.entries.forEach { kind ->
-                    AppChip(
-                        text = kind.label,
-                        selected = kind in filter.kinds,
-                        onClick = {
-                            val next = if (kind in filter.kinds) filter.kinds - kind else filter.kinds + kind
-                            // 全不选等于不限（避免出现空列表的死状态）
-                            onFilter(filter.copy(kinds = next.ifEmpty { ItemKind.entries.toSet() }))
-                        },
-                    )
+            if (showKindSection) {
+                SectionLabel("类型")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ItemKind.entries.forEach { kind ->
+                        AppChip(
+                            text = kind.label,
+                            selected = kind in filter.kinds,
+                            onClick = {
+                                val next = if (kind in filter.kinds) filter.kinds - kind else filter.kinds + kind
+                                // 全不选等于不限（避免出现空列表的死状态）
+                                onFilter(filter.copy(kinds = next.ifEmpty { ItemKind.entries.toSet() }))
+                            },
+                        )
+                    }
                 }
             }
 
@@ -126,11 +139,13 @@ fun SortFilterSheet(
                         onClick = { onFilter(filter.copy(watchState = ws)) },
                     )
                 }
-                AppChip(
-                    text = "仅收藏",
-                    selected = filter.favoritesOnly,
-                    onClick = { onFilter(filter.copy(favoritesOnly = !filter.favoritesOnly)) },
-                )
+                if (showFavorites) {
+                    AppChip(
+                        text = "仅收藏",
+                        selected = filter.favoritesOnly,
+                        onClick = { onFilter(filter.copy(favoritesOnly = !filter.favoritesOnly)) },
+                    )
+                }
             }
 
             SectionLabel("分辨率下限")
@@ -165,15 +180,6 @@ fun SortFilterSheet(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = LocalAppColors.current.text3,
-        modifier = Modifier.padding(top = 18.dp, bottom = 10.dp),
-    )
-}
 
 /** 排序 + 筛选入口按钮（带徽标）。 */
 @Composable
@@ -225,3 +231,9 @@ fun SortFilterBar(
         Spacer(Modifier.weight(1f))
     }
 }
+
+/**
+ * 排序与筛选图标已统一到设计系统 [app.myplayer.core.designsystem.components.FilterListIcon]
+ * （Material `FilterList`，顶栏统一 20dp）。这里不再自绘：自绘版本必须写死 24dp，
+ * 和 20dp 的返回/更多并排时大小不一致（2026-11-01 用户反馈）。
+ */

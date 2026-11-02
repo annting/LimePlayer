@@ -82,8 +82,9 @@ import app.myplayer.core.designsystem.components.LockOpenIcon
 import app.myplayer.core.designsystem.components.MoreVerticalIcon
 import app.myplayer.core.designsystem.components.PlayIcon
 import app.myplayer.core.designsystem.components.ServerIcon
-import app.myplayer.core.designsystem.components.VideoIcon
 import app.myplayer.core.designsystem.components.ShimmerBox
+import app.myplayer.core.designsystem.components.AppButton
+import app.myplayer.core.designsystem.components.ThinProgressBar
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
@@ -92,6 +93,10 @@ import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import app.myplayer.core.designsystem.components.GridIcon
+import app.myplayer.core.designsystem.components.VideoIcon
+import app.myplayer.core.mediaui.CardPlaceholder
+import app.myplayer.core.mediaui.placeholderIconTint
 
 /**
  * 首页（`docs/03` §6.0）—— **单 LazyColumn + 全 16:9 横滑卡片**（2026-10-24 重构）。
@@ -393,6 +398,7 @@ private fun HomeContent(
                     LibraryItemsRow(
                         items = library.items,
                         loadImage = loadImage,
+                        onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
                         canManagePrivate = canManagePrivate,
                         privateKeys = state.privateKeys,
@@ -408,6 +414,7 @@ private fun HomeContent(
                     RecentlyAddedRow(
                         items = state.recentlyAddedList,
                         loadImage = loadImage,
+                        onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
                         canManagePrivate = canManagePrivate,
                         privateKeys = state.privateKeys,
@@ -460,7 +467,7 @@ private fun HomeSection(
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(Spacing.sm.dp))
         content()
     }
 }
@@ -491,14 +498,27 @@ private fun BounceRow(
 // ---- 通用 16:9 横卡 ----
 
 /**
+ * 首页卡片类型：只影响「没图」时中间画哪个图标。
+ *
+ * - [VIDEO]：一条视频（继续观看 / 库条目 / 最近添加）
+ * - [FOLDER]：SMB 的文件夹
+ * - [LIBRARY]：媒体库（Emby / 飞牛）
+ */
+enum class HomeCardKind { VIDEO, FOLDER, LIBRARY }
+
+/**
  * 首页所有模块共用的 16:9 横卡。
  *
  * 差异全部由参数表达，避免每个模块各写一套 Box + 渐变 + 文字：
- * | 模块 | progress | onPlay | subtitle |
- * |---|---|---|---|
- * | 继续观看 | 0..1 | 有 | 「剩余 23 分钟」 |
- * | 我的媒体库 | null | null | 「486 部影片」 |
- * | 库分类 / 最近添加 | null | null | null |
+ * | 模块 | kind | progress | onPlay | subtitle |
+ * |---|---|---|---|---|
+ * | 继续观看 | VIDEO | 0..1 | 有 | 「剩余 23 分钟」 |
+ * | 我的媒体库（Emby / 飞牛） | LIBRARY | null | null | 「486 部影片」 |
+ * | 我的媒体库（SMB） | FOLDER | null | null | 「3 个视频」 |
+ * | 库分类 / 最近添加 | VIDEO | 0..1 | 有 | null |
+ *
+ * 封面层只有一套：`CardPlaceholder`（渐变底 + 居中图标）打底，`AsyncImage` 在最上层；
+ * 图标由 [kind] 决定（视频 / 文件夹 / 媒体库），**任何类型都不画文件名首字**。
  *
  * @param progress 非 null 时在**卡片内侧**画进度条（左右 12dp、底部 8dp 内缩）。
  *   旧实现把进度条贴在卡片最底边，被 12dp 圆角切掉两头（用户报的 bug），内缩后完整显示。
@@ -513,16 +533,19 @@ fun StandardHorizontalCard(
     subtitle: String? = null,
     progress: Float? = null,
     onPlay: (() -> Unit)? = null,
-    /** 非空时用「深灰底 + 居中图标」代替封面（SMB 文件夹卡）。 */
-    centeredIcon: (@Composable () -> Unit)? = null,
     /**
      * 档二（2026-10-29）：非 null = 右上角出三点菜单，点开「设为 / 取消隐私」；
      * [isPrivate] 同时决定左上角的标志与菜单文案。Emby 卡传 null（无档二）。
      */
     onTogglePrivate: (() -> Unit)? = null,
     isPrivate: Boolean = false,
-    /** 视频卡（非文件夹、无封面）：无预览图时用「渐变底 + 视频图标」占位，而非首字（2026-10-30）。 */
-    videoPlaceholder: Boolean = false,
+    /**
+     * 卡片类型：只决定「没图」时中间画哪个图标。
+     *
+     * 2026-11-02 起三类卡片共用同一套封面层（渐变底 + 居中图标 → 图到了盖上去），
+     * 不再有「SMB 自己画渐变」「Emby 库卡画首字」这类分支。
+     */
+    kind: HomeCardKind = HomeCardKind.VIDEO,
 ) {
     val app = LocalAppColors.current
     val scheme = MaterialTheme.colorScheme
@@ -535,25 +558,26 @@ fun StandardHorizontalCard(
             .background(app.surface2)
             .clickable(onClick = onClick),
     ) {
-        if (centeredIcon != null) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.linearGradient(listOf(app.surface2, app.surface3))),
-                contentAlignment = Alignment.Center,
-            ) { centeredIcon() }
-        } else if (videoPlaceholder && image is ImageSource.None) {
-            // 视频卡无预览图（AVI 等抽不出帧）：渐变底 + 居中视频图标（无首字）
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.linearGradient(listOf(app.surface2, app.surface3))),
-                contentAlignment = Alignment.Center,
-            ) {
-                VideoIcon(tint = app.text3.copy(alpha = 0.6f), modifier = Modifier.size(44.dp))
+        // ---- 封面层（三类卡片唯一一套）----
+        // 打底的是「渐变 + 类型图标」，图真到了才盖上去。不能写成「有图就只画图」：
+        // 图片地址可能 404（Emby 条目 Thumb / Backdrop / Primary 全缺，或缓存里 `imageTags` 为空
+        // 导致按 kind 直取一个不存在的图），那时下层若是「渐变 + 文件名首字」就会露出大字母
+        // （用户 2026-11-02 在「最近添加」看到的就是这个）。
+        CardPlaceholder(Modifier.fillMaxSize()) {
+            val tint = placeholderIconTint()
+            when (kind) {
+                HomeCardKind.VIDEO -> VideoIcon(tint = tint, modifier = Modifier.size(44.dp))
+                HomeCardKind.FOLDER -> FolderIcon(tint = tint, modifier = Modifier.size(44.dp))
+                HomeCardKind.LIBRARY -> GridIcon(tint = tint, modifier = Modifier.size(44.dp))
             }
-        } else {
-            HomeImage(source = image, title = title, modifier = Modifier.fillMaxSize())
+        }
+        rememberImageRequest(image)?.let { request ->
+            AsyncImage(
+                model = request,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         // 底部渐变遮罩：保证叠字可读（越往下越实）
@@ -615,22 +639,13 @@ fun StandardHorizontalCard(
 
         if (progress != null) {
             // 进度条：**内缩**在卡片里，不再贴边 —— 贴边会被 12dp 圆角裁掉两头
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(start = 12.dp, end = 12.dp, bottom = 8.dp)
-                    .height(3.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(PlayerTokens.track),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(progress.coerceIn(0f, 1f))
-                        .background(scheme.primary)
-                )
-            }
+            ThinProgressBar(
+                progress = progress,
+                modifier = Modifier.align(Alignment.BottomStart),
+                trackColor = PlayerTokens.track,
+                insetHorizontal = 12.dp,
+                insetBottom = 8.dp,
+            )
         }
 
         // 档二：左上角隐私标志（半透明黑底小胶囊，白描边锁）
@@ -728,7 +743,6 @@ private fun ContinueWatchingRow(
                     null
                 },
                 isPrivate = canManagePrivate && manageKey in privateKeys,
-                videoPlaceholder = true,
             )
         }
     }
@@ -784,12 +798,8 @@ private fun MyLibrariesRow(
                         }
                     } ?: ImageSource.None
                 },
-                // 文件夹卡：渐变底 + 居中图标（与视频无图占位同一套底色/图标尺寸，不加载封面）
-                centeredIcon = if (asFolder) {
-                    { FolderIcon(tint = app.text3.copy(alpha = 0.6f), modifier = Modifier.size(44.dp)) }
-                } else {
-                    null
-                },
+                // 文件夹卡画文件夹图标、媒体库画网格图标；两者与视频卡同一套渐变与图标尺寸
+                kind = if (asFolder) HomeCardKind.FOLDER else HomeCardKind.LIBRARY,
                 onClick = { onOpenLibrary(library.id, library.name, folderMode || library.isFolder) },
                 width = cardW,
                 onTogglePrivate = manage.takeIf { it }?.let { { onToggleCardPrivate(manageKey, true) } },
@@ -805,6 +815,7 @@ private fun MyLibrariesRow(
 private fun LibraryItemsRow(
     items: List<MediaItemDto>,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
+    onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
     canManagePrivate: Boolean,
     privateKeys: Set<String>,
@@ -823,6 +834,8 @@ private fun LibraryItemsRow(
                 image = rememberHomeImage(item.id, ImageKind.THUMB) {
                     loadImage(item, ImageKind.THUMB)
                 },
+                // 两级入口与「继续观看」「网格文件卡」一致：中央播放键直接播，其余区域进详情
+                onPlay = { onPlay(item) },
                 onClick = { onOpenDetail(item) },
                 width = cardW,
                 onTogglePrivate = if (canManagePrivate) {
@@ -831,7 +844,6 @@ private fun LibraryItemsRow(
                     null
                 },
                 isPrivate = canManagePrivate && manageKey in privateKeys,
-                videoPlaceholder = true,
             )
         }
     }
@@ -843,6 +855,7 @@ private fun LibraryItemsRow(
 private fun RecentlyAddedRow(
     items: List<MediaItemDto>,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
+    onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
     canManagePrivate: Boolean,
     privateKeys: Set<String>,
@@ -859,6 +872,8 @@ private fun RecentlyAddedRow(
                 image = rememberHomeImage(item.id, ImageKind.THUMB) {
                     loadImage(item, ImageKind.THUMB)
                 },
+                // 同上：中央播放键直接播，其余区域进详情
+                onPlay = { onPlay(item) },
                 onClick = { onOpenDetail(item) },
                 width = cardW,
                 onTogglePrivate = if (canManagePrivate) {
@@ -867,7 +882,6 @@ private fun RecentlyAddedRow(
                     null
                 },
                 isPrivate = canManagePrivate && manageKey in privateKeys,
-                videoPlaceholder = true,
             )
         }
     }
@@ -897,7 +911,7 @@ private fun HomeSkeleton() {
                         .height(20.dp),
                     cornerRadius = 4.dp,
                 )
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(Spacing.sm.dp))
                 Row(
                     modifier = Modifier.padding(start = Dimens.pagePadding),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.md.dp),
@@ -985,16 +999,14 @@ private fun EmptyHomeState(
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                 color = app.text3,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 6.dp),
+                modifier = Modifier.padding(top = Spacing.sm.dp),
             )
-            Button(
+            AppButton(
+                text = "去设置开启",
                 onClick = onGoToHomeSettings,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = scheme.primary),
-                modifier = Modifier.padding(top = 24.dp).heightIn(min = 44.dp),
-            ) {
-                Text(text = "去设置开启", style = MaterialTheme.typography.labelLarge)
-            }
+                fillMaxWidth = false,
+                modifier = Modifier.padding(top = 24.dp),
+            )
         }
     }
 }

@@ -11,8 +11,9 @@ import androidx.room.RoomDatabase
         PlaybackProgressEntity::class,
         MediaStreamEntity::class,
         WatchHistoryEntity::class,
+        LocalIgnoredFolderEntity::class,
     ],
-    version = 4,
+    version = 5,
     // 导出 schema 是为了给 v1→v2 / v2→v3 / v3→v4 迁移建基线（docs/10-数据存储方案.md §9）：
     // 没有 schemas/…/N.json，MigrationTestHelper 无法验证迁移。
     exportSchema = true,
@@ -24,4 +25,5 @@ abstract class MediaDatabase : RoomDatabase() {
     abstract fun playbackProgressDao(): PlaybackProgressDao
     abstract fun mediaStreamDao(): MediaStreamDao
     abstract fun watchHistoryDao(): WatchHistoryDao
+    abstract fun localIgnoreDao(): LocalIgnoreDao
 }

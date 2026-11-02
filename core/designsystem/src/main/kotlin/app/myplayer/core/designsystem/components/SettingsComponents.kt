@@ -80,12 +80,13 @@ data class SettingsOption<T>(val value: T, val label: String)
 /**
  * 一个设置分组：小标题 + 12dp 圆角卡片。
  *
- * @param title 12sp 灰色小标题
+ * @param title 12sp 灰色小标题；**传 null 即「无标题卡片」**（详情页信息区就是这种形态，
+ *   2026-11-02 起 `InfoCard` 由本组件派生，不再手抄一遍 `clip + background + border`）
  * @param content 组内的行（用下面的 `SettingsXxxRow`）
  */
 @Composable
 fun SettingsGroup(
-    title: String,
+    title: String?,
     modifier: Modifier = Modifier,
     /** 卡片底色；默认 surface。传入渐变色可以做「高亮闪烁」（如首页设置定位动画）。 */
     containerColor: Color? = null,
@@ -95,12 +96,14 @@ fun SettingsGroup(
     val scheme = MaterialTheme.colorScheme
 
     Column(modifier.fillMaxWidth()) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            color = app.text3,
-            modifier = Modifier.padding(start = Spacing.xs.dp, bottom = Spacing.sm.dp),
-        )
+        if (title != null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelMedium,
+                color = app.text3,
+                modifier = Modifier.padding(start = Spacing.xs.dp, bottom = Spacing.sm.dp),
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -326,6 +329,103 @@ fun <T> SettingsMenuRow(
                         null
                     },
                     // 行高压到 44dp：8 档倍速也能在一屏里少占 60dp
+                    modifier = Modifier.heightIn(min = 44.dp),
+                    contentPadding = PaddingValues(horizontal = Dimens.pagePadding),
+                )
+            }
+        }
+    }
+}
+
+/** 动作菜单里的一项（与「单选项」[SettingsOption] 不同：它是"做一件事"，不是"选一个值"）。 */
+data class SettingsAction(
+    val label: String,
+    val onClick: () -> Unit,
+    val enabled: Boolean = true,
+    /** 危险动作（删除）：文字用 error 色 */
+    val destructive: Boolean = false,
+    /** 在它之前画一条分隔线，用来分组（如「移入隐私」之后隔开「删除服务器」） */
+    val dividerBefore: Boolean = false,
+)
+
+/**
+ * 形态 B′：行 + **动作菜单**（右侧 ⋮ 弹出）。
+ *
+ * 与 [SettingsMenuRow] 的区别只在语义：那个是**单选项行**（当前值 + 下拉，`options + selected`），
+ * 这个是**动作菜单**（修改 / 设为当前 / 移入隐私 / 删除这类一次性命令）。
+ * 2026-11-02 抽（`docs/13-组件统一修复任务.md` T9）：审查报告曾建议把服务器行直接用
+ * `SettingsMenuRow` 替换 —— 语义不对，会把"选值"变成"执行动作"，所以单独收这一份。
+ *
+ * 两者共用同一套 `BoxWithConstraints` 右对齐定位（行宽 - 菜单宽）。
+ *
+ * @param actions 菜单项，按顺序渲染
+ * @param badges 徽章槽位（`⋮` 左边）：用于「隐私」「当前」这类状态标识
+ * @param onClick 点整行（不是点 ⋮）；null = 行不可点
+ */
+@Composable
+fun SettingsActionMenuRow(
+    title: String,
+    actions: List<SettingsAction>,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+    enabled: Boolean = true,
+    onClick: (() -> Unit)? = null,
+    showDivider: Boolean = true,
+    badges: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+) {
+    val app = LocalAppColors.current
+    val scheme = MaterialTheme.colorScheme
+    var expanded by remember { mutableStateOf(false) }
+
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val menuWidth = 168.dp
+        val offsetX: Dp = (maxWidth - menuWidth).coerceAtLeast(0.dp)
+
+        SettingsRow(
+            title = title,
+            description = description,
+            enabled = enabled,
+            onClick = onClick,
+            showDivider = showDivider,
+            trailing = {
+                badges()
+                CircleIconButton(onClick = { expanded = true }) {
+                    MoreVerticalIcon(tint = app.text3)
+                }
+            },
+        )
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.width(menuWidth),
+            offset = DpOffset(x = offsetX, y = 0.dp),
+            shape = AppShape.card,
+            containerColor = scheme.surface,
+            tonalElevation = 0.dp,
+            shadowElevation = 10.dp,
+            border = BorderStroke(Dimens.hairline, app.border),
+        ) {
+            actions.forEach { action ->
+                if (action.dividerBefore) HorizontalDivider(color = app.border)
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = action.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = when {
+                                !action.enabled -> app.text3
+                                action.destructive -> scheme.error
+                                else -> scheme.onSurface
+                            },
+                        )
+                    },
+                    enabled = action.enabled,
+                    onClick = {
+                        expanded = false
+                        action.onClick()
+                    },
+                    // 与下拉行同一口径：44dp 行高 + 16dp 左右内边距
                     modifier = Modifier.heightIn(min = 44.dp),
                     contentPadding = PaddingValues(horizontal = Dimens.pagePadding),
                 )

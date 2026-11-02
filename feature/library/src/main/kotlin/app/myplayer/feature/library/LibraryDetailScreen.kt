@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -59,18 +60,21 @@ import app.myplayer.core.designsystem.components.CheckIcon
 import app.myplayer.core.designsystem.components.LockIcon
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.CircleIconButton
+import app.myplayer.core.designsystem.components.FilterListIcon
 import app.myplayer.core.designsystem.components.VideoIcon
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.ItemQuery
 import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.MediaSource
+import app.myplayer.core.model.SourceType
 import app.myplayer.core.model.resumeFraction
-import app.myplayer.feature.library.home.HomeImage
+import app.myplayer.core.mediaui.PosterCard
 import app.myplayer.feature.library.home.rememberHomeImage
 import app.myplayer.feature.library.home.rememberImageRequest
 import coil3.compose.AsyncImage
 import app.myplayer.core.designsystem.AppShape
+import app.myplayer.core.mediaui.MediaGrid
 import app.myplayer.feature.library.home.HomeSourceType
 import app.myplayer.feature.library.home.MockHomeData
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -214,7 +218,7 @@ class LibraryDetailViewModel(
         }
     }
 
-    /** 海报加载（suspend → [HomeImage] 链路）。 */
+    /** 海报加载（suspend → [rememberHomeImage] 链路）。 */
     suspend fun image(item: MediaItemDto, kind: ImageKind): ImageSource =
         source?.image(item, kind, app.myplayer.core.model.ImageSize.MEDIUM) ?: ImageSource.None
 
@@ -295,9 +299,9 @@ class LibraryDetailViewModel(
 /**
  * 媒体库详情页（首页「我的媒体库 / 我的文件夹」卡片与「查看全部」的落地页）。
  *
- * 双形态共用一个 3 列网格：
- * - **Emby**（[HomeSourceType.EMBY]）：[EmbyPosterCard]，2:3 海报 + 青柠绿进度条；
- * - **SMB**（[HomeSourceType.SMB]）：[SmbVideoCard]，16:9 深灰底 + 视频 icon + 文件名 ——
+ * **两种源共用同一张 [PosterCard]**（2026-11-02 用户定稿：所有入口的 item 效果必须一致）：
+ * - **Emby**（[HomeSourceType.EMBY]）：海报来自服务器，播放键走条目 id；
+ * - **SMB**（[HomeSourceType.SMB]）：封面由本地抽帧兜底，播放键走文件路径 ——
  *   第一层文件夹在首页已被映射成库，这里**只可能是视频文件**。
  *
  * 多选：长按任意卡片进入；顶栏切换成「已选择 X 项 + 全选 / 标记已看」；
@@ -312,7 +316,8 @@ fun LibraryDetailScreen(
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
     onBack: () -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
-    onPlayPath: (String) -> Unit,
+    /** 播放：Emby 传条目 id，SMB 传文件路径（播放页两种都能吃）。 */
+    onPlay: (String) -> Unit,
     onLongPress: (String) -> Unit,
     onToggleSelect: (String) -> Unit,
     onExitSelection: () -> Unit,
@@ -379,7 +384,7 @@ fun LibraryDetailScreen(
                 // 换平板 / 折叠屏展开态仍是三列 → 每列被拉得很宽、海报发虚。
                 // `Adaptive(92dp)` 实测：411dp 手机 = 3 列（与原来一致），
                 // 600dp 平板 = 5 列、800dp 折叠展开 = 7 列，无需再按屏宽写分支。
-                columns = GridCells.Adaptive(minSize = GRID_MIN_COLUMN.dp),
+                columns = GridCells.Adaptive(minSize = MediaGrid.minColumnWidth),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
                     // 左右 16dp = 首页标题基线（UI 优化方案 L3）：两页共用同一条左边线，
@@ -393,8 +398,8 @@ fun LibraryDetailScreen(
                     // 滚到底会多出约 25dp 空白（UI 优化方案 L4）。
                     bottom = 100.dp,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(GRID_SPACING.dp),
-                verticalArrangement = Arrangement.spacedBy(GRID_SPACING.dp),
+                horizontalArrangement = Arrangement.spacedBy(MediaGrid.spacing),
+                verticalArrangement = Arrangement.spacedBy(MediaGrid.spacing),
             ) {
                 if (sourceType == HomeSourceType.SMB) {
                     items(items = displaySmb, key = { it.path }) { video ->
@@ -404,20 +409,25 @@ fun LibraryDetailScreen(
                             selected = selected,
                             selectionMode = selection.active,
                             loadImage = loadImage,
-                            onClick = { if (selection.active) onToggleSelect(video.path) else onPlayPath(video.path) },
+                            // 与本机/Emby 同一套两级入口：中央播放按钮播放，卡片其余区域进详情
+                            onPlay = { onPlay(video.path) },
+                            onOpenDetail = { video.item?.let(onOpenDetail) },
+                            onToggleSelect = { onToggleSelect(video.path) },
                             onLongClick = { onLongPress(video.path) },
                         )
                     }
                 } else {
                     items(items = displayEmby, key = { it.id }) { item ->
-                        val selected = item.id in selection.ids
-                        EmbyPosterCard(
+                        PosterCard(
                             item = item,
-                            selected = selected,
+                            // 在线源只有海报（POSTER），与「媒体库」tab 的网格同一条链路
+                            loadImage = { it -> loadImage(it, ImageKind.POSTER) },
+                            onPlay = { onPlay(it.id) },
+                            onOpenDetail = onOpenDetail,
                             selectionMode = selection.active,
-                            loadImage = loadImage,
-                            onClick = { if (selection.active) onToggleSelect(item.id) else onOpenDetail(item) },
-                            onLongClick = { onLongPress(item.id) },
+                            selected = item.id in selection.ids,
+                            onToggleSelect = { onToggleSelect(item.id) },
+                            onLongPress = { onLongPress(item.id) },
                         )
                     }
                 }
@@ -573,358 +583,103 @@ private fun DetailTopBar(
         }
         if (selectionMode) {
             if (canMarkPrivate) {
-                TopBarAction(
+                CircleIconButton(
+                    onClick = onTogglePrivate,
+                    shape = AppShape.circle,
                     enabled = anySelected,
                     contentDescription = "加入或移出隐私",
-                    onClick = onTogglePrivate,
-                ) { tint -> LockIcon(tint = tint) }
+                ) { LockIcon(tint = app.text3) }
             }
-            TopBarAction(
+            CircleIconButton(
+                onClick = onSelectAll,
+                shape = AppShape.circle,
                 enabled = !allSelected,
                 contentDescription = "全选",
-                onClick = onSelectAll,
-            ) { tint -> SelectAllIcon(tint = tint) }
-            TopBarAction(
+            ) { SelectAllIcon(tint = app.text3) }
+            CircleIconButton(
+                onClick = onMarkWatched,
+                shape = AppShape.circle,
                 enabled = anySelected,
                 contentDescription = "标记已看",
-                onClick = onMarkWatched,
-            ) { tint -> CheckIcon(tint = tint) }
+            ) { CheckIcon(tint = app.text3) }
         } else {
-            TopBarAction(
-                enabled = true,
-                contentDescription = "排序与筛选",
+            CircleIconButton(
                 onClick = onShowFilter,
-            ) { tint -> FilterListIcon(tint = tint) }
-        }
-    }
-}
-
-/** 顶栏右侧图标按钮（视觉 40dp、**热区 48dp**，与 `CircleIconButton` 同口径）。 */
-@Composable
-private fun TopBarAction(
-    enabled: Boolean,
-    contentDescription: String,
-    onClick: () -> Unit,
-    icon: @Composable (Color) -> Unit,
-) {
-    val app = LocalAppColors.current
-    Box(
-        modifier = Modifier
-            .size(Dimens.touchTarget)
-            .alpha(if (enabled) 1f else 0.35f)
-            .clip(CircleShape)
-            .combinedClickable(enabled = enabled, onClick = onClick, onLongClick = null),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(Modifier.size(Dimens.iconButton), contentAlignment = Alignment.Center) {
-            icon(app.text3)
-        }
-    }
-}
-
-// ---- Emby 海报卡 ----
-
-/**
- * 卡片底部「内缩进度条」（Emby 海报卡 / SMB 视频卡共用）。
- *
- * 内缩 8dp / 底距 4dp：贴底边画的话两端会被卡片 8dp 圆角切掉一截
- * （用户 2026-10-24 提过，与首页继续观看是同一个坑）。
- * 调用方负责传 `.align(Alignment.BottomStart)`，本组件只管尺寸与配色。
- */
-@Composable
-private fun CardProgressBar(progress: Float, modifier: Modifier = Modifier) {
-    val app = LocalAppColors.current
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        modifier
-            .padding(start = 8.dp, end = 8.dp, bottom = 4.dp)
-            .fillMaxWidth()
-            .height(3.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(app.surface3),
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth(progress)
-                .height(3.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(scheme.primary),
-        )
-    }
-}
-
-/**
- * Emby 卡片：2:3 竖向海报 + 底部青柠绿进度条。
- *
- * 多选选中 = 2dp 青柠绿描边 + 半透明遮罩 + 右上角选中圆。
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-internal fun EmbyPosterCard(
-    item: MediaItemDto,
-    selected: Boolean,
-    selectionMode: Boolean,
-    loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    /** 播放进度（0..1）。默认取条目自身的续播占比；搜索结果可显式传入（与列表状态同源）。 */
-    progress: Float = item.resumeFraction(),
-) {
-    val scheme = MaterialTheme.colorScheme
-    val shape = AppShape.card
-    // 只有「看了一部分但没看完」才画进度条：0 = 没看过，1 = 已看完，都不需要提示
-    val inProgress = progress > 0f && progress < 1f
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(2f / 3f)
-            .clip(shape)
-            .then(if (selected) Modifier.border(2.dp, scheme.primary, shape) else Modifier)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    ) {
-        val source = rememberHomeImage(item.id, ImageKind.POSTER) {
-            loadImage(item, ImageKind.POSTER)
-        }
-        HomeImage(source = source, title = item.title, modifier = Modifier.fillMaxSize())
-
-        // 底部渐变遮罩 + 标题（用户 2026-10-24 补充：卡片必须带名字，否则看不出是什么片）
-        // 有进度条时文字抬高，给「内缩进度条」让位（进度条 4dp 底距 + 3dp 高 + 3dp 呼吸）
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.65f),
-                    ),
-                )
-                .padding(
-                    start = 10.dp,
-                    end = 10.dp,
-                    top = 18.dp,
-                    bottom = if (inProgress) 14.dp else 8.dp,
-                ),
-        ) {
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // 进度条：与 SMB 视频卡共用同一组件（内缩口径见 [CardProgressBar]）
-        if (inProgress) {
-            CardProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomStart))
-        }
-
-        if (selected) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(scheme.primary.copy(alpha = 0.25f)),
-            )
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(scheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                CheckIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(14.dp))
-            }
+                shape = AppShape.circle,
+                contentDescription = "排序与筛选",
+            ) { FilterListIcon(tint = app.text3) }
         }
     }
 }
 
 // ---- SMB 视频卡 ----
 
+// ---- SMB 视频卡 ----
+
 /**
- * SMB 卡片：抽帧缩略图（拿不到时退回「深灰底 + 视频 icon」），底部渐变遮罩 + 文件名。
+ * SMB 文件卡：**与本机文件夹、Emby 网格共用同一张 [PosterCard]**（2026-11-02 用户要求统一）。
  *
- * 卡片尺寸与 Emby 海报卡**完全一致**（2:3）：同一个 3 列网格里两套源必须同宽同高。
- * 16:9 的抽帧不裁切 —— 用「模糊放大底 + 居中完整画面」的三层画法填满卡片，见下方实现。
- *
- * 全部是视频、没有文件夹 —— SMB 的第一层文件夹在首页已被映射成库。
+ * 统一后的布局：2:3 封面 → 文件名（卡片下方）→ 左「体积」右「年份」。
+ * 之前这张卡把文件名压在封面底部渐变上、本机卡放在封面下方，同一个 App 里出现两套样式。
  *
  * 缩略图与 Emby 海报走**同一条** `loadImage` 链路：`source.image()` 对 SMB 恒为 None，
  * 于是自动落到调用方注入的 `LocalThumbnailProvider`（见 `ThumbnailFallback.kt`）。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SmbVideoCard(
     video: SmbVideoItem,
     selected: Boolean,
     selectionMode: Boolean,
     loadImage: suspend (MediaItemDto, ImageKind) -> ImageSource,
-    onClick: () -> Unit,
+    onPlay: () -> Unit,
+    onOpenDetail: () -> Unit,
+    onToggleSelect: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val app = LocalAppColors.current
-    val scheme = MaterialTheme.colorScheme
-    val shape = AppShape.card
-
-    // 续播进度（2026-10-31）：`source:smb` 的 `getItems` 早已把 Room 断点写进
-    // `userData.resumePositionTicks`，并且 `durationTicks` 取了探测到的时长 ——
-    // 之前只是**卡片没画**，所以媒体库里看不到进度条。
-    // 时长缺失（`durationTicks = 0`，还没探测过）时 `resumeFraction()` 返回 0，不画，正常。
-    val progress = video.item?.resumeFraction() ?: 0f
-    // 只有「看了一部分但没看完」才画：0 = 没看过，1 = 已看完，都不需要提示
-    val inProgress = progress > 0f && progress < 1f
-
-    // 抽帧是 suspend + 带闸门的：只在卡片真正进入组合时才触发（网格只组合可见项）
-    val dto = video.item
-    val image: ImageSource = if (dto != null) {
-        rememberHomeImage(dto.id, ImageKind.THUMB) { loadImage(dto, ImageKind.THUMB) }
-    } else {
-        ImageSource.None
-    }
-    val request = rememberImageRequest(image)
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            // **与 Emby 海报卡同尺寸（2:3）**：两套源共用一个 3 列网格，卡片必须同宽同高，
-            // 否则 SMB 那一屏会又扁又稀（用户 2026-10-25 反馈「和 emby 不一致」）。
-            // 16:9 的抽帧不裁切，改成上下留白 + 模糊底（见下面的三层画法）。
-            .aspectRatio(2f / 3f)
-            .clip(shape)
-            .background(app.surface2)
-            .then(if (selected) Modifier.border(2.dp, scheme.primary, shape) else Modifier)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    ) {
-        if (request != null) {
-            // ① 底：同一帧放大裁切 + 模糊 + 压暗 —— 给 16:9 画面垫一层「海报底」，
-            //    不然 2:3 卡片上下会露出大片纯色。
-            //    `blur` 在 API < 31 上是 no-op，所以②的压暗层不是装饰，是那种机型的兜底。
-            AsyncImage(
-                model = request,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(18.dp)
-                    .alpha(0.55f),
-            )
-            // ② 压暗
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)))
-            // ③ 前：完整画面（Fit，**不裁切** —— 视频帧裁掉一半就认不出内容了）
-            AsyncImage(
-                model = request,
-                contentDescription = video.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            // 没有缩略图（AVI 等抽不出帧的容器 / 还没抽出来）：视频占位图。
-            // 渐变底 + 居中常见视频图标（不带首字），保证无图卡片也有清晰占位（2026-10-30）。
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Brush.linearGradient(listOf(app.surface2, app.surface3))),
-                contentAlignment = Alignment.Center,
-            ) {
-                VideoIcon(
-                    tint = app.text3.copy(alpha = 0.6f),
-                    modifier = Modifier.size(44.dp),
-                )
-            }
-        }
-
-        // 底部渐变遮罩 + 文件名（与 Emby 卡的标题层同一套尺寸：10/18/8dp + labelMedium）
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        1f to Color.Black.copy(alpha = 0.65f),
-                    ),
-                )
-                .padding(
-                    start = 10.dp,
-                    end = 10.dp,
-                    top = 18.dp,
-                    // 有进度条时文字抬高，给「内缩进度条」让位（与 Emby 卡同一口径）
-                    bottom = if (inProgress) 14.dp else 8.dp,
-                ),
-        ) {
-            Text(
-                text = video.name,
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        // 续播进度条：与 Emby 海报卡同一位置、同一配色（2026-10-31 补上，此前只画了封面）
-        if (inProgress) {
-            CardProgressBar(progress = progress, modifier = Modifier.align(Alignment.BottomStart))
-        }
-
-        if (selected) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(scheme.primary.copy(alpha = 0.25f)),
-            )
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(scheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                CheckIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(14.dp))
-            }
-        }
-    }
+    val dto = remember(video) { video.asMediaItem() }
+    PosterCard(
+        item = dto,
+        loadImage = { item -> loadImage(item, ImageKind.THUMB) },
+        onPlay = { onPlay() },
+        onOpenDetail = { onOpenDetail() },
+        modifier = modifier,
+        selectionMode = selectionMode,
+        selected = selected,
+        onToggleSelect = onToggleSelect,
+        onLongPress = onLongClick,
+    )
 }
+
+/**
+ * [SmbVideoItem] → 统一卡片要的 [MediaItemDto]。
+ *
+ * 正常路径下 `item` 已由 VM 填好（抽帧需要它）；Mock 预览数据为 null 时用
+ * path / name / size / 修改时间兜一个，保证卡片布局不塌、元信息行还能显示体积与年份。
+ */
+private fun SmbVideoItem.asMediaItem(): MediaItemDto = item ?: MediaItemDto(
+    id = path,
+    serverId = "",
+    sourceType = SourceType.SMB,
+    title = name.substringBeforeLast('.', name),
+    container = name.substringAfterLast('.', "").ifBlank { null },
+    sizeBytes = sizeBytes.takeIf { it > 0L },
+    dateCreated = lastModified.takeIf { it > 0L },
+    path = path,
+    hasPoster = false,
+)
 
 // ---- 自绘图标 ----
 
 /**
- * 自绘图标的默认尺寸。
+ * 自绘图标的默认尺寸：**20dp**，与顶栏的 [BackIcon] / `FilterListIcon` / `MoreVerticalIcon` 同口径。
  *
  * ⚠️ `Canvas` 没有 `size` 约束时测量结果是 **0dp** —— 图标画了但完全不可见
  * （2026-10-24 真机：顶栏右侧的「排序与筛选」按钮是空的，就是因为它）。
- * Material 的 `Icon` 自带 24dp 默认值，自绘图标必须同样兜底。
+ *
+ * 早先是 24dp，和 20dp 的返回箭头并排时明显偏大（2026-11-01 用户反馈图标大小不一致）。
  */
-private fun Modifier.defaultIconSize(): Modifier = this.size(24.dp)
-
-/** 排序与筛选（三横线递减，`FilterList` 语义）。 */
-@Composable
-private fun FilterListIcon(
-    tint: Color,
-    modifier: Modifier = Modifier.defaultIconSize(),
-) {
-    androidx.compose.foundation.Canvas(modifier) { drawFilterList(tint) }
-}
-
-private fun DrawScope.drawFilterList(tint: Color) {
-    val stroke = Stroke(width = size.height / 12f, join = StrokeJoin.Round)
-    val rows = floatArrayOf(0.18f, 0.5f, 0.82f)
-    rows.forEachIndexed { index, y ->
-        val endX = when (index) {
-            0 -> 0.86f
-            1 -> 0.62f
-            else -> 0.38f
-        }
-        drawLine(tint, start = androidx.compose.ui.geometry.Offset(size.width * 0.14f, size.height * y),
-            end = androidx.compose.ui.geometry.Offset(size.width * endX, size.height * y), strokeWidth = stroke.width)
-    }
-}
+private fun Modifier.defaultIconSize(): Modifier = this.size(20.dp)
 
 /** 关闭（X）。 */
 @Composable
@@ -1024,7 +779,7 @@ private fun LibraryDetailPreviewContent(
             },
             onBack = {},
             onOpenDetail = {},
-            onPlayPath = {},
+            onPlay = {},
             onLongPress = {},
             onToggleSelect = {},
             onExitSelection = {},
@@ -1072,10 +827,8 @@ private fun LibraryDetailSmbPreview() {
  * ⚠️ 不要把它调回 132dp：那个值在 411dp 屏上算出 **2 列**（`(379+8)/(132+8) = 2.76`），
  * 正是 2026-10-24「一加 Adaptive 会变成 2 列」结论的由来 —— 问题在列宽取值，不在 Adaptive。
  */
-private const val GRID_MIN_COLUMN = 92
 
 /** 网格单元间距（用户 2026-10-24 定稿 8dp）。 */
-private const val GRID_SPACING = 8
 
 /** 海报 / 视频卡圆角统一走 `AppShape.card`（12dp）。 */
 

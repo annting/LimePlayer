@@ -48,6 +48,13 @@ dependencies {
 
     debugImplementation(libs.compose.ui.tooling)
 
+    // 行级渲染测试（SelectableRow 两档预设）跑在 Robolectric 上，同 :feature:library
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    debugImplementation(libs.compose.ui.test.manifest)
+
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)

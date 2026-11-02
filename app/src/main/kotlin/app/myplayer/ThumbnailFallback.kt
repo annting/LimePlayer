@@ -55,7 +55,7 @@ class LocalThumbnailProvider(
     private fun lockFor(id: String): Mutex = synchronized(locks) { locks.getOrPut(id) { Mutex() } }
 
     private fun cacheFile(item: MediaItemDto): File =
-        File(File(context.cacheDir, "thumbs"), "${item.serverId}_${item.id}.jpg")
+        File(File(context.cacheDir, "thumbs"), "${CACHE_VERSION}_${item.serverId}_${item.id}.jpg")
 
     /**
      * 取缩略图：命中缓存直接返回；否则抽帧（同一 item 的并发请求串行化）。
@@ -97,9 +97,19 @@ class LocalThumbnailProvider(
         val frame = runCatching {
             MediaMetadataRetriever().let { r ->
                 try {
-                    // ⚠️ headers 必须给空 Map 而不是 null：`setDataSource(String, Map)` 内部直接
-                    // `headers.size()`，传 null 会抛 NPE（2026-10-25 真机实测，SMB 没有请求头所以必踩）。
-                    r.setDataSource(direct.uri, direct.headers)
+                    // 本机两档直放地址都必须走 `setDataSource(Context, Uri)` 重载：
+                    // · content://（SAF）—— String 重载会当文件路径，解析不到文档提供器，必失败；
+                    // · file://（全盘访问档）—— String 重载在三星上返回 0xFFFFFFEA（2026-11-01 实测），
+                    //   Context+Uri 走 ContentResolver 的 file 分支才正常。
+                    // 只有 http(s)（SMB 本机桥）才用带 headers 的 String 重载。
+                    val uri = direct.uri
+                    if (uri.startsWith("content://") || uri.startsWith("file://")) {
+                        r.setDataSource(context, uri.toUri())
+                    } else {
+                        // ⚠️ headers 必须给空 Map 而不是 null：`setDataSource(String, Map)` 内部直接
+                        // `headers.size()`，传 null 会抛 NPE（2026-10-25 真机实测，SMB 没有请求头所以必踩）。
+                        r.setDataSource(direct.uri, direct.headers)
+                    }
                     // 取哪一帧：固定 3 秒在长片上经常刚好是片头标题卡（黑底白字，抽出来像没图）。
                     // 有时长就按比例取，短片取 1/3 处、长片取 10% 且最多 45 秒。
                     val durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
@@ -182,6 +192,12 @@ class LocalThumbnailProvider(
     }
 
     private companion object {
+        /**
+         * 缓存键版本：抽帧逻辑一改（比如换 `setDataSource` 重载）就要加一档，
+         * 否则**旧的 0 字节负缓存会永远把该视频判成"抽不出图"**，改完代码也看不到效果。
+         */
+        const val CACHE_VERSION = "v2"
+
         /** 同时抽帧上限（见类注释第 2 条）。 */
         const val MAX_PARALLEL_EXTRACTIONS = 2
 

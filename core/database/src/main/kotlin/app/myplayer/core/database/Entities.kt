@@ -176,6 +176,23 @@ data class MediaStreamEntity(
 )
 
 /**
+ * 本机视频源的「忽略文件夹」（`docs/12-本机视频播放方案.md` §4.6）。
+ *
+ * 纯偏好层：只影响「扫描出来的文件夹是否展示」，不删任何文件条目，也不参与隐私过滤。
+ * 与档二 `file_media_items.isPrivate` 语义独立。
+ */
+@Entity(
+    tableName = "local_ignored_folders",
+    primaryKeys = ["sourceId", "folderPath"],
+)
+data class LocalIgnoredFolderEntity(
+    val sourceId: String,
+    /** 相对源根的文件夹路径，`/` 分隔（根目录本身用空串表示，一般不忽略）。 */
+    val folderPath: String,
+    val createdAt: Long,
+)
+
+/**
  * 观看历史（`docs/10-数据存储方案.md` §6.6）：**append-only 事实表**，一次播放会话一行。
  *
  * 为什么不和 [PlaybackProgressEntity] 合并：进度是「当前状态」（可覆盖、一条目一行），

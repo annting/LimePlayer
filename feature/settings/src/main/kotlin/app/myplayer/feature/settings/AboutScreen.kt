@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.LocalBottomNavSpace
 import app.myplayer.core.designsystem.components.PageHeader
+import app.myplayer.core.designsystem.Dimens
 
 /** 连点窗口：超过这个间隔就重新计数，避免「随手点两下、明天再点一下就进去了」。 */
 private const val TAP_WINDOW_MS = 1_500L
@@ -58,7 +59,7 @@ fun AboutScreen(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp)
+                .padding(horizontal = Dimens.pagePadding)
                 // 底部 = 悬浮导航高度（已含手势条 + 呼吸）：这层 padding 在 verticalScroll
                 // 之后，属于滚动内容的一部分 → 只在滚到底时留白，不会被导航胶囊压住
                 .padding(bottom = LocalBottomNavSpace.current),

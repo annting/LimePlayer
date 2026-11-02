@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- 访问自建媒体服务器（Emby / 飞牛影视）所必需 -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -8,6 +9,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      本机视频（docs/12 §3.1）：「全盘访问」是**可选加速档**，不是必需权限。
+      · 没开 → 走 SAF（用户选目录，takePersistableUriPermission），功能完整可用；
+      · 开了 → 用 File 直接扫 /storage/emulated/0，能覆盖 SAF 禁止选的 Download 根，扫描也快一个量级。
+      它是特殊权限（不弹普通权限框，需用户去系统设置手动开），Google Play 需申报理由；
+      侧载/自有渠道分发无碍。声明它是为了 Settings 里能出现本应用的开关。
+    -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <!--
       M1 骨架阶段说明（docs/02-技术规范.md §8）：

@@ -1,27 +1,16 @@
 package app.myplayer.feature.library.home
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
-import app.myplayer.core.designsystem.LocalAppColors
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSource
 
@@ -44,45 +33,14 @@ internal fun rememberHomeImage(
 }
 
 /**
- * 图片层：底层永远是「渐变占位 + 首字」，图片到了才盖上去。
- * 这样断网 / 无海报 / 加载中都不会出现白块或空洞。
- */
-@Composable
-internal fun HomeImage(
-    source: ImageSource,
-    title: String,
-    modifier: Modifier = Modifier,
-) {
-    val app = LocalAppColors.current
-    val request: ImageRequest? = rememberImageRequest(source)
-
-    Box(
-        modifier = modifier.background(
-            Brush.linearGradient(listOf(app.surface2, app.surface3))
-        ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = title.take(1),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
-        )
-        if (request != null) {
-            AsyncImage(
-                model = request,
-                contentDescription = title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-    }
-}
-
-/**
  * [ImageSource] → Coil [ImageRequest]；`None` 返回 null（调用方自己决定占位长什么样）。
  *
- * 抽出来给 SMB 视频卡复用：那边不要「渐变 + 首字」这层占位，只要一张铺满的缩略图，
- * 但请求构造（令牌走请求头、crossfade）必须与海报完全一致，否则同一张图会进两份缓存。
+ * **占位统一在卡片层**（2026-11-02）：这里原来还有一个 `HomeImage`，画的是「渐变 + 文件名首字」。
+ * Emby 条目缺图或图片 404 时，首页卡片就会露出一个大字母，与 SMB 抽出帧的卡片完全两种观感。
+ * 现在三类卡片统一成「渐变 + 类型图标 → 图到了盖上去」（`CardPlaceholder` / `VideoPlaceholder`
+ * 在 `core:media-ui`），`HomeImage` 已删除 —— 不要再在这里加文字占位。
+ *
+ * 请求构造（令牌走请求头、crossfade）仍集中在这里，保证同一张图不会进两份缓存。
  */
 @Composable
 internal fun rememberImageRequest(source: ImageSource): ImageRequest? {

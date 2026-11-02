@@ -54,6 +54,7 @@ import app.myplayer.core.model.ImageKind
 import app.myplayer.core.model.ImageSize
 import app.myplayer.core.model.ImageSource
 import app.myplayer.core.model.MediaItemDto
+import app.myplayer.core.mediaui.PosterCard
 import app.myplayer.core.model.MediaSource
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -164,16 +165,23 @@ fun PersonScreen(
                         start = 16.dp,
                         end = 16.dp,
                         top = 16.dp,
-                        // 28dp 呼吸留白 + 手势条：MainActivity 不再统一避让底部
+                        // 24dp 呼吸留白 + 手势条：MainActivity 不再统一避让底部
                         // （首页悬浮导航要透底），演员页要自己让出来
-                        bottom = 28.dp +
+                        bottom = Spacing.xl.dp +
                             WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(),
                     ),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Dimens.itemGap),
                     verticalArrangement = Arrangement.spacedBy(Dimens.itemGap),
                 ) {
                     items(state.works, key = { it.id }) { work ->
-                        WorkCard(work, rememberItemImage(work, ImageKind.POSTER, loadImage), onItemClick)
+                        // 演员作品页复用全站唯一文件卡（docs/13 T7）：
+                        // 只给 onOpenDetail，不给 onPlay —— 这里点卡片是进详情，
+                        // 播放按钮因此不渲染（不会出现点了没反应的按钮）
+                        PosterCard(
+                            item = work,
+                            loadImage = { item -> loadImage(item, ImageKind.POSTER) },
+                            onOpenDetail = onItemClick,
+                        )
                     }
                 }
             }
@@ -219,46 +227,6 @@ private fun PersonHeader(name: String, avatar: ImageSource) {
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** 作品海报卡（2:3，复用库页卡片密度；`03` §6.3.1）。 */
-@Composable
-private fun WorkCard(
-    work: MediaItemDto,
-    poster: ImageSource,
-    onItemClick: (MediaItemDto) -> Unit,
-) {
-    Column(
-        Modifier
-            .clip(RoundedCornerShape(AppRadius.poster.dp))
-            .clickable { onItemClick(work) },
-    ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(AppRadius.poster.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            val request = rememberImageRequest(poster)
-            if (request != null) {
-                AsyncImage(
-                    model = request,
-                    contentDescription = work.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            work.title,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }

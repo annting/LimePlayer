@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
@@ -310,6 +312,35 @@ fun ScreenRotateIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
 @Composable
 fun MoreVerticalIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
     imageVector = Icons.Filled.MoreVert,
+    contentDescription = null,
+    tint = tint,
+    modifier = modifier.size(20.dp),
+)
+
+/**
+ * 「添加」（加号）：本机多根授权、列表末尾「添加文件夹」。
+ *
+ * 顶栏一律用图标，**不要再用 `Text("＋")`** —— 文字字形的基线/字重跟着字体走，
+ * 和旁边的 `BackIcon` / `MoreVerticalIcon` 光学大小对不上（2026-11-01 用户反馈）。
+ */
+@Composable
+fun AddIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
+    imageVector = Icons.Filled.Add,
+    contentDescription = null,
+    tint = tint,
+    modifier = modifier.size(20.dp),
+)
+
+/**
+ * 「排序与筛选」：Material `FilterList`（三横线递减）。
+ *
+ * 媒体库详情页与本机文件夹页共用这一个。**顶栏图标统一 20dp**（与 [BackIcon] /
+ * [MoreVerticalIcon] 同尺寸）：自绘 Canvas 版本默认 24dp，和 20dp 的返回/更多并排时
+ * 明显偏大（用户 2026-11-01 反馈「过滤和三个点大小不一致」）。
+ */
+@Composable
+fun FilterListIcon(tint: Color, modifier: Modifier = Modifier) = Icon(
+    imageVector = Icons.Filled.FilterList,
     contentDescription = null,
     tint = tint,
     modifier = modifier.size(20.dp),

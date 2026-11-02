@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import app.myplayer.core.security.PatternCredentialStore
+import app.myplayer.core.designsystem.components.AppButton
+import app.myplayer.core.designsystem.components.AppButtonStyle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -120,15 +121,13 @@ fun PatternSetupScreen(
             },
         )
 
-        TextButton(
+        AppButton(
+            text = "取消",
             onClick = onCancel,
+            style = AppButtonStyle.Text,
+            fillMaxWidth = false,
+            height = 40.dp,
             modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 8.dp),
-        ) {
-            Text(
-                text = "取消",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        )
     }
 }

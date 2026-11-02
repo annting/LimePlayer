@@ -31,6 +31,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import android.widget.Toast
+import app.myplayer.core.designsystem.components.AppConfirmDialog
+import app.myplayer.core.designsystem.components.CircleIconButton
+import app.myplayer.core.designsystem.components.SettingsDivider
+import app.myplayer.core.designsystem.components.SettingsGroup
+import app.myplayer.core.designsystem.components.ThinProgressBar
 import app.myplayer.core.designsystem.AppRadius
 import app.myplayer.core.designsystem.AppShape
 import app.myplayer.core.designsystem.Dimens
@@ -144,7 +149,14 @@ fun DetailScreen(
             )
         }
         // 返回键常驻在 hero 之上（加载 / 错误态也要能返回）
-        BackButton(onBack = onBack, modifier = Modifier.align(Alignment.TopStart).padding(12.dp))
+        // 返回键：scrim 半透明底（hero 图上可读），走统一图标按钮
+        CircleIconButton(
+            onClick = onBack,
+            modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
+            background = MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f),
+        ) {
+            BackIcon(tint = Color.White)
+        }
     }
 }
 
@@ -276,18 +288,14 @@ private fun DetailContent(
             -> "从磁盘永久删除"
             else -> "从服务器永久删除"
         }
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("删除条目") },
-            text = { Text("确定要$where「${item.title}」吗？此操作不可恢复。") },
-            confirmButton = {
-                TextButton(onClick = { showDeleteDialog = false; onDelete() }) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
-            },
+        // 规范确认弹窗：20dp 圆角、四边 20dp、内容↔按钮 12dp（与「清空搜索历史」同一套）
+        AppConfirmDialog(
+            title = "删除条目",
+            message = "确定要$where「${item.title}」吗？此操作不可恢复。",
+            confirmText = "删除",
+            onConfirm = { showDeleteDialog = false; onDelete() },
+            onDismiss = { showDeleteDialog = false },
+            destructive = true,
         )
     }
 }
@@ -310,20 +318,16 @@ private fun DetailActionButton(
 ) {
     val scheme = MaterialTheme.colorScheme
     val accent = if (danger) scheme.error else scheme.primary
-    Box(
-        modifier = modifier
-            .size(Dimens.touchTarget)
-            .semantics { this.contentDescription = contentDescription }
-            .clip(AppShape.circle)
-            .then(
-                if (filled) {
-                    Modifier.background(accent)
-                } else {
-                    Modifier.border(1.dp, if (danger) accent else scheme.outlineVariant, AppShape.circle)
-                }
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+    // 视觉 48dp（操作行图标偏大），实心 / 描边 / 危险色全部由统一图标按钮表达
+    CircleIconButton(
+        onClick = onClick,
+        modifier = modifier,
+        shape = AppShape.circle,
+        size = Dimens.touchTarget,
+        background = if (filled) accent else Color.Transparent,
+        borderColor = if (filled) null else if (danger) accent else scheme.outlineVariant,
+        contentDescription = contentDescription,
+        pressScale = 0.92f,
     ) {
         icon(if (filled) scheme.onPrimary else accent)
     }
@@ -338,22 +342,12 @@ private fun ResumeRow(fraction: Float, remaining: String) {
     Column(Modifier.fillMaxWidth()) {
         // 16dp：与主按钮拉开。旧值 10dp + 与按钮等宽时，这条 3dp 细线会被读成「按钮的下边框」
         Spacer(Modifier.height(16.dp))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                // 左右各内缩 8dp：不再与按钮同宽，进一步把「进度」和「按钮」区分开
-                .padding(horizontal = 8.dp)
-                .height(3.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxHeight()
-                    .fillMaxWidth(fraction.coerceIn(0f, 1f))
-                    .background(MaterialTheme.colorScheme.primary)
-            )
-        }
+        // 续播进度线：共享 ThinProgressBar（左右内缩 8dp、轨道用弱化的 onSurface）
+        ThinProgressBar(
+            progress = fraction,
+            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+            insetBottom = 0.dp,
+        )
         Spacer(Modifier.height(8.dp))
         Text(
             "剩余 $remaining",
@@ -408,7 +402,7 @@ private fun HeroHeader(item: MediaItemDto, poster: ImageSource) {
             Modifier
                 .align(Alignment.BottomStart)
                 .fillMaxWidth()
-                .padding(horizontal = Dimens.pagePadding, vertical = 14.dp),
+                .padding(horizontal = Dimens.pagePadding, vertical = Spacing.md.dp),
         ) {
             item.seriesName?.takeIf { it.isNotBlank() && it != item.title }?.let { series ->
                 Text(series, style = MonoLabelStyle, color = PlayerTokens.onMediaSecondary, maxLines = 1)
@@ -437,28 +431,6 @@ private fun MediaItemDto.metaLine(): String? {
     formatDuration(durationTicks)?.let { parts += it }
     officialRating?.takeIf { it.isNotBlank() }?.let { parts += it }
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
-}
-
-@Composable
-private fun BackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
-    // 外层 48dp 是**触控热区**（规范 §5），内层 40dp 才是视觉尺寸。
-    // 外层比视觉大 4dp/边，配合调用处的 padding(12dp)，视觉左缘正好落在 16dp 页面基准线上。
-    Box(
-        modifier = modifier
-            .size(Dimens.touchTarget)
-            .clickable(onClick = onBack),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(Dimens.iconButton)
-                .clip(AppShape.control)
-                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.42f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            BackIcon(tint = Color.White)
-        }
-    }
 }
 
 // ---- 分季剧集 ----
@@ -490,7 +462,7 @@ private fun SeasonSection(
             }
         }
         Spacer(Modifier.height(12.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.md.dp)) {
             // key 保证切季时每集的图片状态不串
             key(current.seasonNumber, current.episodes.size) {
                 current.episodes.forEach { episode ->
@@ -536,12 +508,13 @@ private fun EpisodeRow(episode: MediaItemDto, thumb: ImageSource, onClick: () ->
             }
             val fraction = episode.resumeFraction()
             if (fraction > 0f) {
-                Box(
-                    Modifier
-                        .align(Alignment.BottomStart)
-                        .fillMaxWidth(fraction)
-                        .height(3.dp)
-                        .background(MaterialTheme.colorScheme.primary)
+                // 缩略图上的进度线：无轨道、贴底边（docs/13 T6 漏掉的第 4 处手写实现）
+                ThinProgressBar(
+                    progress = fraction,
+                    modifier = Modifier.align(Alignment.BottomStart),
+                    trackColor = Color.Transparent,
+                    insetHorizontal = 0.dp,
+                    insetBottom = 0.dp,
                 )
             }
         }
@@ -562,7 +535,7 @@ private fun EpisodeRow(episode: MediaItemDto, thumb: ImageSource, onClick: () ->
                 }
             }
             episode.overview?.takeIf { it.isNotBlank() }?.let { text ->
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text,
                     style = MaterialTheme.typography.bodySmall,
@@ -708,25 +681,14 @@ private fun InfoSections(item: MediaItemDto) {
  */
 @Composable
 private fun InfoCard(rows: List<Pair<String, String>>) {
-    val app = LocalAppColors.current
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(AppShape.card)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(Dimens.hairline, app.border, AppShape.card),
-    ) {
+    // 无标题的 SettingsGroup：圆角 12dp、surface 底、1dp 描边、行间发丝线全部由它负责，
+    // 这里只剩「行内容 + 分隔线」（2026-11-02 组件统一，docs/13 T8）
+    SettingsGroup(title = null) {
         rows.forEachIndexed { index, (label, value) ->
             // ⚠️ 左右 16dp 内边距放在 LabelValueRow 内部（clickable 之后），不要包一层 Box：
             // 包了 Box 以后可点区域跟着被收窄 16dp，点击高亮只在中间一截，两侧留白（用户 2026-10-28 反馈）。
             LabelValueRow(label, value)
-            if (index != rows.lastIndex) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(start = Dimens.pagePadding),
-                    thickness = Dimens.hairline,
-                    color = app.border,
-                )
-            }
+            if (index != rows.lastIndex) SettingsDivider()
         }
     }
 }

@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import app.myplayer.core.designsystem.Dimens
 import app.myplayer.core.designsystem.LocalAppColors
 import app.myplayer.core.designsystem.MyPlayerTheme
 import app.myplayer.core.designsystem.Spacing
@@ -35,6 +36,7 @@ import app.myplayer.core.designsystem.components.SettingsGroup
 import app.myplayer.core.designsystem.components.SettingsMenuRow
 import app.myplayer.core.designsystem.components.SettingsOption
 import app.myplayer.core.designsystem.components.SettingsSwitchRow
+import app.myplayer.core.designsystem.components.AppButton
 
 // ---- 筛选状态 ----
 
@@ -223,8 +225,8 @@ fun FilterBottomSheet(
                 Modifier
                     .weight(1f, fill = false)
                     .fillMaxWidth(),
-                contentPadding = PaddingValues(start = Spacing.md.dp, end = Spacing.md.dp),
-                verticalArrangement = Arrangement.spacedBy(Spacing.lg.dp),
+                contentPadding = PaddingValues(start = Dimens.dialogPadding, end = Dimens.dialogPadding),
+                verticalArrangement = Arrangement.spacedBy(Dimens.sectionGap),
             ) {
                 item {
                     SettingsGroup(title = "排序规则") {
@@ -280,25 +282,15 @@ fun FilterBottomSheet(
             }
 
             // ── 底部固定主按钮 ──
-            Button(
+            AppButton(
+                // 面板自身不查数据：页面回填 resultCount 后显示「查看 X 个结果」，否则退化为「查看结果」
+                text = state.resultCount?.let { "查看 $it 个结果" } ?: "查看结果",
                 onClick = {
                     onApplyFilter(state)
                     onDismiss()
                 },
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = scheme.primary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = Spacing.md.dp, vertical = Spacing.md.dp)
-                    .heightIn(min = 48.dp),
-            ) {
-                Text(
-                    // 面板自身不查数据：页面回填 resultCount 后显示「查看 X 个结果」，
-                    // 否则退化为「查看结果」
-                    text = state.resultCount?.let { "查看 $it 个结果" } ?: "查看结果",
-                    style = MaterialTheme.typography.labelLarge,
-                )
-            }
+                modifier = Modifier.padding(horizontal = Spacing.md.dp, vertical = Spacing.md.dp),
+            )
         }
     }
 }

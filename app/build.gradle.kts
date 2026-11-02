@@ -62,6 +62,8 @@ dependencies {
     implementation(project(":feature:privacy"))
     // SMB 源：登录网关要直接用 SmbConfig / testSmbConnection
     implementation(project(":source:smb"))
+    // 本机源：本机 tab 直接构造 LocalMediaSource（SAF content:// 直出）
+    implementation(project(":source:local"))
 
     // 媒体会话（任务 2-4）：通知栏 / 锁屏控制的 MediaSessionService
     implementation(libs.androidx.media3.session)

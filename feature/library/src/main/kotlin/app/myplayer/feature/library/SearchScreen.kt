@@ -61,6 +61,8 @@ import app.myplayer.core.model.MediaItemDto
 import app.myplayer.core.model.SourceType
 import app.myplayer.core.model.Ticks
 import app.myplayer.core.model.UserData
+import app.myplayer.core.mediaui.PosterCard
+import app.myplayer.core.mediaui.MediaGrid
 
 /**
  * 搜索页（`03` §6.2 / 任务 3-6）：输入即搜、搜索历史 chips、结果复用库页网格。
@@ -68,7 +70,7 @@ import app.myplayer.core.model.UserData
  * 页面结构：
  * - 顶部 [OutlinedTextField]，有输入时带一键清除（X）；
  * - 输入为空 → [SearchHistorySection]（三行折叠、可展开、可清空）；
- * - 输入不为空 → 3 列 [LazyVerticalGrid]，卡片复用 [EmbyPosterCard]。
+ * - 输入不为空 → 3 列 [LazyVerticalGrid]，卡片复用统一文件卡 [PosterCard]。
  */
 @Composable
 fun SearchScreen(
@@ -80,6 +82,7 @@ fun SearchScreen(
     onClearHistory: () -> Unit,
     onToggleHistoryExpanded: () -> Unit,
     loadImage: suspend (MediaItemDto) -> ImageSource,
+    onPlay: (MediaItemDto) -> Unit,
     onOpenDetail: (MediaItemDto) -> Unit,
     modifier: Modifier = Modifier,
     autoFocus: Boolean = true,
@@ -166,7 +169,7 @@ fun SearchScreen(
 
             else -> LazyVerticalGrid(
                 // 与媒体库详情页完全一致：强制 3 列、8dp 间距
-                columns = GridCells.Fixed(SEARCH_COLUMN_COUNT),
+                columns = GridCells.Fixed(MediaGrid.fixedColumns),
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
@@ -176,19 +179,17 @@ fun SearchScreen(
                     // 悬浮导航高度（含手势条 + 呼吸）
                     bottom = LocalBottomNavSpace.current,
                 ),
-                horizontalArrangement = Arrangement.spacedBy(SEARCH_GRID_SPACING.dp),
-                verticalArrangement = Arrangement.spacedBy(SEARCH_GRID_SPACING.dp),
+                horizontalArrangement = Arrangement.spacedBy(MediaGrid.spacing),
+                verticalArrangement = Arrangement.spacedBy(MediaGrid.spacing),
             ) {
                 items(state.searchResults, key = { it.item.id }) { result ->
-                    EmbyPosterCard(
+                    PosterCard(
                         item = result.item,
-                        selected = false,
-                        selectionMode = false,
+                        loadImage = loadImage,
+                        onPlay = onPlay,
+                        onOpenDetail = onOpenDetail,
                         // 进度与搜索结果同源；卡片内部只在 (0,1) 区间渲染青柠绿进度条
                         progress = result.progress,
-                        loadImage = { item, _ -> loadImage(item) },
-                        onClick = { onOpenDetail(result.item) },
-                        onLongClick = {},
                     )
                 }
             }
@@ -253,7 +254,7 @@ private fun SearchHistorySection(
             }
         }
 
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(8.dp))
 
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -329,6 +330,7 @@ private fun SearchResultsPreview() {
             onClearHistory = {},
             onToggleHistoryExpanded = {},
             loadImage = { item -> ImageSource.Remote("https://picsum.photos/seed/${item.id}/300/450") },
+            onPlay = {},
             onOpenDetail = {},
             autoFocus = false,
         )
@@ -353,6 +355,7 @@ private fun SearchHistoryCollapsedPreview() {
             onClearHistory = {},
             onToggleHistoryExpanded = {},
             loadImage = { ImageSource.None },
+            onPlay = {},
             onOpenDetail = {},
             autoFocus = false,
         )
@@ -377,6 +380,7 @@ private fun SearchHistoryExpandedPreview() {
             onClearHistory = {},
             onToggleHistoryExpanded = {},
             loadImage = { ImageSource.None },
+            onPlay = {},
             onOpenDetail = {},
             autoFocus = false,
         )
@@ -414,7 +418,5 @@ private object SearchPreviewData {
 // ---- 常量 ----
 
 /** 结果网格列数：与媒体库详情页一致，强制 3 列（不要 Adaptive）。 */
-private const val SEARCH_COLUMN_COUNT = 3
 
 /** 结果网格间距（与媒体库详情页一致 8dp）。 */
-private const val SEARCH_GRID_SPACING = 8

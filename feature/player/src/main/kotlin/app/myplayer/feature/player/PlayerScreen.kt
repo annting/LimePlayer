@@ -100,6 +100,7 @@ import app.myplayer.core.designsystem.MonoLabelStyle
 import app.myplayer.core.designsystem.PlayerTokens
 import app.myplayer.core.designsystem.components.BackIcon
 import app.myplayer.core.designsystem.components.CheckIcon
+import app.myplayer.core.designsystem.components.CircleIconButton
 import app.myplayer.core.designsystem.components.MoreVerticalIcon
 import app.myplayer.core.designsystem.components.LockIcon
 import app.myplayer.core.designsystem.components.LockOpenIcon
@@ -110,6 +111,7 @@ import app.myplayer.core.designsystem.components.ScreenRotateIcon
 import app.myplayer.core.designsystem.components.SeekBack10Icon
 import app.myplayer.core.designsystem.components.SeekForward10Icon
 import app.myplayer.core.designsystem.components.SettingsIcon
+import app.myplayer.core.designsystem.Spacing
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -1090,7 +1092,7 @@ private fun PlayerControls(
                 )
                 .padding(bottom = navBarBottom)
                 .padding(horizontal = 16.dp)
-                .padding(top = 26.dp, bottom = 6.dp),
+                .padding(top = Spacing.xl.dp, bottom = 6.dp),
         ) {
             // 第一行：进度条
             PlayerProgressBar(
@@ -1318,7 +1320,6 @@ private fun speedText(speed: Float): String {
 }
 
 /** 浮层每行固定高度：面板高度取整数行，最后一行不会被裁掉半截。 */
-private val QuickRowHeight = 36.dp
 
 /** 标题块高度（labelSmall 一行 + 上下内边距），用于算可见行数。 */
 private val QuickHeaderHeight = 28.dp
@@ -1359,37 +1360,23 @@ private fun QuickListPanel(
                 .height(QuickRowHeight * visibleRows)
                 .verticalScroll(rememberScrollState()),
         ) {
-            options.forEach { option -> QuickListRow(option) }
-        }
-    }
-}
-
-@Composable
-private fun QuickListRow(option: QuickOption) {
-    Row(
-        Modifier
-            .height(QuickRowHeight)
-            .clickable(onClick = option.onClick)
-            .padding(start = 12.dp, end = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // 对号占位：未选中也留同样宽度，文字左边缘保持对齐
-        Box(Modifier.width(18.dp)) {
-            if (option.selected) {
-                CheckIcon(tint = PlayerTokens.onMedia, modifier = Modifier.size(14.dp))
+            options.forEach { option ->
+                SelectableRow(
+                    label = option.label,
+                    selected = option.selected,
+                    onClick = option.onClick,
+                    variant = SelectableRowVariant.Quick,
+                )
             }
         }
-        Text(
-            option.label,
-            color = if (option.selected) PlayerTokens.onMedia else PlayerTokens.onMedia.copy(alpha = 0.68f),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = if (option.selected) FontWeight.SemiBold else FontWeight.Normal,
-        )
     }
 }
 
 /**
- * 播放器覆盖层按钮：半透明圆底 + 按压微缩放。
+ * 播放器覆盖层按钮：半透明圆底 + 按压微缩放（0.9）。
+ *
+ * **只是播放层的参数预设**：绘制、热区、禁用表达全部走 [CircleIconButton]，
+ * 与顶栏 / 详情操作行同一份实现（2026-11-02 组件统一，见 `docs/13-组件统一修复任务.md` T5）。
  *
  * [border] 非空时描一圈 1dp（悬浮在画面上的按钮用，亮暗画面都能勾出边界）。
  */
@@ -1402,23 +1389,16 @@ private fun PlayerIconButton(
     border: Color? = null,
     content: @Composable () -> Unit,
 ) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.9f else 1f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 900f),
-        label = "player-icon-scale",
+    CircleIconButton(
+        onClick = onClick,
+        modifier = modifier,
+        shape = CircleShape,
+        size = size,
+        background = background,
+        borderColor = border,
+        pressScale = 0.9f,
+        content = content,
     )
-    Box(
-        modifier = modifier
-            .size(size)
-            .scale(scale)
-            .clip(CircleShape)
-            .background(background)
-            .then(if (border != null) Modifier.border(1.dp, border, CircleShape) else Modifier)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { content() }
 }
 
 @Composable

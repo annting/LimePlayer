@@ -27,6 +27,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
     implementation(project(":core:designsystem"))
+    implementation(project(":core:media-ui"))
     // 首页设置与设置页共用同一份 DataStore（HomeSettingsRepository 读 PlayerSettings 里的两份首页规则）
     implementation(project(":core:datastore"))
 

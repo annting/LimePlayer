@@ -291,6 +291,25 @@ interface PlaybackProgressDao {
     suspend fun delete(sourceId: String, mediaKey: String)
 }
 
+/**
+ * 本机视频源的「忽略文件夹」偏好（`docs/12-本机视频播放方案.md` §4.6）。
+ * 写入幂等（`INSERT OR IGNORE`），恢复即删除该行。
+ */
+@Dao
+interface LocalIgnoreDao {
+    @Query("SELECT folderPath FROM local_ignored_folders WHERE sourceId = :sourceId")
+    suspend fun folders(sourceId: String): List<String>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(row: LocalIgnoredFolderEntity)
+
+    @Query("DELETE FROM local_ignored_folders WHERE sourceId = :sourceId AND folderPath = :folderPath")
+    suspend fun delete(sourceId: String, folderPath: String)
+
+    @Query("DELETE FROM local_ignored_folders WHERE sourceId = :sourceId")
+    suspend fun clear(sourceId: String)
+}
+
 /** 探测出的多轨明细（`media_streams`）：一条目 1:N，整体替换（先删后插）。 */
 @Dao
 interface MediaStreamDao {

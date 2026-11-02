@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -90,6 +91,20 @@ fun MainScaffold(
     fileCatalog: app.myplayer.core.model.FileCatalogStore? = null,
     /** 播放页返回计数：首页据此重拉「继续观看」（播放中写的进度要重新 load 才反映）。 */
     homeRefreshSignal: Int = 0,
+    /** 本机视频源（「本机」tab）；null = 未授权。 */
+    localSource: app.myplayer.source.local.LocalMediaSource? = null,
+    /** 本机已授权根（多根；含已失效的，管理页要展示/移除）。 */
+    localRoots: List<app.myplayer.core.datastore.LocalRoot> = emptyList(),
+    /** 是否已获得「所有文件访问权限」（全盘加速档）。 */
+    localAllFilesAccess: Boolean = false,
+    /** 本机根目录（SAF tree URI）持久化：授权按钮写这里。 */
+    localRootStore: app.myplayer.core.datastore.LocalRootStore? = null,
+    /** 本机「忽略文件夹」偏好。 */
+    localIgnoreStore: app.myplayer.core.model.LocalIgnoreStore? = null,
+    /** 本机 tab 里点视频 → 播放页（带 `local=true` 路由参数）。 */
+    onPlayLocal: (String) -> Unit = {},
+    /** 本机 tab 里点条目 → 详情页（带 `local=true`）。 */
+    onOpenDetailLocal: (String) -> Unit = {},
 ) {
     // 启动落点 = 首页（聚合页）：一进来就该看到继续观看与最近添加，而不是库页的筛选器。
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.HOME) }
@@ -102,7 +117,11 @@ fun MainScaffold(
     // 状态放在这一层而不是让子页自己管：切走 tab 再切回来（子导航会恢复路由）也不会漏；
     // 而 `hideNav` 又限定在 SETTINGS tab，别的 tab 永远不会被这个状态影响。
     var settingsSubPage by rememberSaveable { mutableStateOf(false) }
-    val hideNav = selectedTab == MainTab.SETTINGS && settingsSubPage
+    // 「本机」tab 的二级页：进了文件夹就收起悬浮导航（用户 2026-11-02 要求，
+    // 与「设置 → 二级页」同一套处理：内容整屏，底部只让出手势条）。
+    var localFolderOpen by rememberSaveable { mutableStateOf(false) }
+    val hideNav = (selectedTab == MainTab.SETTINGS && settingsSubPage) ||
+        (selectedTab == MainTab.LIBRARY && localFolderOpen)
 
     // 设置 tab 的 saveable 槽版本号。**光切 tab 清不掉子导航的返回栈**：
     // `subNav` 的栈是 `rememberNavController` 用 `rememberSaveable` 存进 `tabStates` 的，
@@ -216,24 +235,35 @@ fun MainScaffold(
                         // 首页卡片三点菜单（设为 / 取消隐私）只在隐私模式显示
                         privacyActive = privacyActive,
                     )
-                    MainTab.LIBRARY -> LibraryDestination(
-                        repository = repository,
-                        serverConfigStore = serverConfigStore,
-                        source = source,
-                        serverId = serverId,
-                        caps = caps,
-                        localThumbnails = localThumbnails,
-                        onPlay = onPlay,
-                        onOpenDetail = onOpenDetail,
-                        openLibraryId = pendingLibraryId,
-                        onLibraryOpened = { pendingLibraryId = null },
-                    )
+                    MainTab.LIBRARY -> {
+                        // 「本机」tab：手机自身视频（docs/12）。不是服务器，未授权先给授权引导。
+                        val rootStore = localRootStore
+                        val ignoreStore = localIgnoreStore
+                        if (rootStore != null && ignoreStore != null) {
+                            LocalDestination(
+                                localSource = localSource,
+                                localRootStore = rootStore,
+                                localRoots = localRoots,
+                                allFilesAccess = localAllFilesAccess,
+                                localIgnoreStore = ignoreStore,
+                                caps = caps,
+                                onPlay = onPlayLocal,
+                                onOpenDetail = onOpenDetailLocal,
+                                onSubPageChange = { localFolderOpen = it },
+                            )
+                        } else {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("本机源未就绪", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
                     MainTab.SEARCH -> SearchDestination(
                         repository = repository,
                         source = source,
                         serverId = serverId,
                         caps = caps,
                         localThumbnails = localThumbnails,
+                        onPlay = onPlay,
                         onOpenDetail = onOpenDetail,
                         privacyResetSignal = privacyResetSignal,
                     )

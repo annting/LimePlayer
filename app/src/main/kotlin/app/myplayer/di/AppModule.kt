@@ -9,13 +9,16 @@ import androidx.room.Room
 import app.myplayer.core.database.MIGRATION_1_2
 import app.myplayer.core.database.MIGRATION_2_3
 import app.myplayer.core.database.MIGRATION_3_4
+import app.myplayer.core.database.MIGRATION_4_5
 import app.myplayer.core.database.MediaDatabase
 import app.myplayer.core.database.RoomFileCatalog
 import app.myplayer.core.database.RoomLibraryRepository
+import app.myplayer.core.database.RoomLocalIgnoreStore
 import app.myplayer.core.database.RoomPlaybackStore
 import app.myplayer.core.datastore.*
 import app.myplayer.core.model.ClientCapabilities
 import app.myplayer.core.model.FileCatalogStore
+import app.myplayer.core.model.LocalIgnoreStore
 import app.myplayer.core.model.LibraryRepository
 import app.myplayer.core.model.MutablePrivacyVisibilityPolicy
 import app.myplayer.core.model.PlaybackStore
@@ -47,6 +50,9 @@ import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
+/** 本机视频根目录（SAF tree URI）单独一份，不混进 `settings`（见 `LocalRootStore` 注释）。 */
+private val Context.localRootDataStore by preferencesDataStore(name = "local_root")
+
 /**
  * 装配点：**所有落盘实现都在这里注入**（内存实现只允许出现在测试里）。
  * 令牌 / 服务器配置 / 应用锁凭据均在 `filesDir/secrets/` 下以密文保存。
@@ -58,9 +64,10 @@ object AppModule {
     @Provides @Singleton
     fun mediaDatabase(@ApplicationContext ctx: Context): MediaDatabase =
         Room.databaseBuilder(ctx, MediaDatabase::class.java, "myplayer.db")
-            // v1→v2（三张新表）、v2→v3（watch_history）、v3→v4（file_media_items.isPrivate）
-            // 都是纯增量。builder 没有 fallbackToDestructiveMigration，少了迁移覆盖安装会直接崩在启动。
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            // v1→v2（三张新表）、v2→v3（watch_history）、v3→v4（file_media_items.isPrivate）、
+            // v4→v5（local_ignored_folders）都是纯增量。
+            // builder 没有 fallbackToDestructiveMigration，少了迁移覆盖安装会直接崩在启动。
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
             .build()
 
     /**
@@ -91,6 +98,15 @@ object AppModule {
     @Provides @Singleton
     fun fileCatalogStore(db: MediaDatabase, privacy: PrivacyVisibilityPolicy): FileCatalogStore =
         RoomFileCatalog(db, privacy)
+
+    /** 本机视频源的「忽略文件夹」偏好（`docs/12-本机视频播放方案.md` §4.6）。 */
+    @Provides @Singleton
+    fun localIgnoreStore(db: MediaDatabase): LocalIgnoreStore = RoomLocalIgnoreStore(db)
+
+    /** 已授权的本机视频根目录（SAF tree URI）；null = 未授权。 */
+    @Provides @Singleton
+    fun localRootStore(@ApplicationContext ctx: Context): LocalRootStore =
+        DataStoreLocalRootStore(ctx.localRootDataStore)
 
     @Provides @Singleton
     fun settingsStore(@ApplicationContext ctx: Context): SettingsStore = DataStoreSettingsStore(ctx.dataStore)
